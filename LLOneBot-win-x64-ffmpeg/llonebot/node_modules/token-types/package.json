@@ -1,0 +1,79 @@
+{
+  "name": "token-types",
+  "version": "6.0.3",
+  "description": "Common token types for decoding and encoding numeric and string values",
+  "author": {
+    "name": "Borewit",
+    "url": "https://github.com/Borewit"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Borewit"
+  },
+  "scripts": {
+    "clean": "del-cli 'lib/**/*.js' 'lib/***.js.map' 'test/**/*.d.ts' 'test/**/*.js' 'test/**/*.js.map'",
+    "build": "npm run compile",
+    "compile-src": "tsc --p lib",
+    "compile-test": "tsc --p test",
+    "compile": "npm run compile-src && npm run compile-test",
+    "lint:ts": "biome check",
+    "lint:md": "remark -u preset-lint-recommended .",
+    "lint": "npm run lint:md && npm run lint:ts",
+    "test": "mocha",
+    "test-coverage": "c8 npm run test",
+    "send-codacy": "c8 report --reports-dir=./.coverage --reporter=text-lcov | codacy-coverage"
+  },
+  "engines": {
+    "node": ">=14.16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Borewit/token-types"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/index.d.ts"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "exports": "./lib/index.js",
+  "types": "lib/index.d.ts",
+  "bugs": {
+    "url": "https://github.com/Borewit/token-types/issues"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.6",
+    "@types/chai": "^5.2.2",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^24.0.7",
+    "c8": "^10.1.2",
+    "chai": "^5.2.0",
+    "del-cli": "^5.0.0",
+    "mocha": "^11.7.1",
+    "remark-cli": "^12.0.1",
+    "remark-preset-lint-recommended": "^7.0.0",
+    "source-map-support": "^0.5.21",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@tokenizer/token": "^0.3.0",
+    "ieee754": "^1.2.1"
+  },
+  "remarkConfig": {
+    "plugins": [
+      "preset-lint-recommended"
+    ]
+  },
+  "keywords": [
+    "token",
+    "integer",
+    "unsigned",
+    "numeric",
+    "float",
+    "IEEE",
+    "754",
+    "strtok3"
+  ],
+  "packageManager": "yarn@4.9.2"
+}

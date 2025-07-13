@@ -1,0 +1,43 @@
+[info] | 2025-07-13 11:55:08 | WebUI 端口: 3080
+
+[info] | 2025-07-13 11:55:08 | LLOneBot/5.4.1
+
+[info] | 2025-07-13 11:55:08 | OneBot V11 WebSocket server started 127.0.0.1:3001
+
+[info] | 2025-07-13 11:55:08 | OneBot V11 HTTP SSE started 127.0.0.1:3000/_events
+
+[info] | 2025-07-13 11:55:08 | auto creating table message
+
+[info] | 2025-07-13 11:55:08 | auto creating table forward
+
+[info] | 2025-07-13 11:55:08 | OneBot V11 HTTP server started 127.0.0.1:3000
+
+[info] | 2025-07-13 11:55:08 | auto creating table file_v2
+
+[info] | 2025-07-13 11:55:53 | [收-私] 清弦(1010411661)：
+/echo 你好
+
+[info] | 2025-07-13 12:16:19 | 群成员减少 GroupMemberChange { groupCode: 742790340, memberUid: 'u_o2CVT07b7EfKBBLs3FCl0w', type: 130, adminUid: '\x12\x02\b\x00' }
+
+[info] | 2025-07-13 12:16:20 | nodeIKernelUixConvertService/getUin 
+
+[info] | 2025-07-13 12:16:20 | fetchUserDetailInfo 351988919
+
+[info] | 2025-07-13 12:32:07 | [收-私] 清弦(1010411661)：
+你好
+
+[info] | 2025-07-13 12:40:42 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:40:42 | Connected to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:40:42 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-13 12:40:58 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-13 12:41:01 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:41:01 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-13 12:41:01 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+

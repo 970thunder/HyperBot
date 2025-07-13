@@ -1,0 +1,106 @@
+[info] | 2025-07-13 12:41:49 | WebUI 端口: 3080
+
+[info] | 2025-07-13 12:41:49 | OneBot V11 WebSocket server started 127.0.0.1:3001
+
+[info] | 2025-07-13 12:41:49 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:41:49 | LLOneBot/5.4.1
+
+[info] | 2025-07-13 12:41:49 | OneBot V11 HTTP SSE started 127.0.0.1:3000/_events
+
+[info] | 2025-07-13 12:41:49 | OneBot V11 HTTP server started 127.0.0.1:3000
+
+[info] | 2025-07-13 12:41:49 | Connected to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:41:49 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-13 12:42:15 | [收-私] 清弦(1010411661)：
+你好
+
+[info] | 2025-07-13 12:42:15 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws message.private
+
+[info] | 2025-07-13 12:42:15 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, message_type: 'private', message: [ { type: 'text', data: { text: '你说: 你好' } } ] }, echo: '1' }
+
+[info] | 2025-07-13 12:42:15 | HTTP 事件上报: http://localhost:8080/onebot/v11/http message.private 204
+
+[warn] | 2025-07-13 12:42:15 | HTTP 事件上报返回数据解析失败: http://localhost:8080/onebot/v11/http [SyntaxError: Unexpected end of JSON input]
+
+[info] | 2025-07-13 12:42:15 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, message_type: 'private', message: [ { type: 'text', data: { text: '你说: 你好' } } ] }, echo: '2' }
+
+[info] | 2025-07-13 12:42:15 | 消息发送 { chatType: 1, peerUid: 'u_RWJfB5Ran_OI-27YsuVJeA', guildId: '' }
+
+[info] | 2025-07-13 12:42:15 | [发-私] 清弦(1010411661)：
+你说: 你好
+
+[info] | 2025-07-13 12:42:15 | 消息发送 { chatType: 1, peerUid: 'u_RWJfB5Ran_OI-27YsuVJeA', guildId: '' }
+
+[info] | 2025-07-13 12:42:15 | [发-私] 清弦(1010411661)：
+你说: 你好
+
+[info] | 2025-07-13 12:42:49 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-13 12:43:30 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-13 12:43:33 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-13 12:43:33 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-13 12:43:33 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-13 12:43:36 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:43:36 | Connected to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:43:36 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-13 12:43:46 | [收-私] 清弦(1010411661)：
+hello
+
+[info] | 2025-07-13 12:43:46 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws message.private
+
+[info] | 2025-07-13 12:43:46 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, message_type: 'private', message: [ { type: 'text', data: { text: '你说: hello' } } ] }, echo: '1' }
+
+[info] | 2025-07-13 12:43:46 | HTTP 事件上报: http://localhost:8080/onebot/v11/http message.private 204
+
+[warn] | 2025-07-13 12:43:46 | HTTP 事件上报返回数据解析失败: http://localhost:8080/onebot/v11/http [SyntaxError: Unexpected end of JSON input]
+
+[info] | 2025-07-13 12:43:46 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, message_type: 'private', message: [ { type: 'text', data: { text: '你说: hello' } } ] }, echo: '2' }
+
+[info] | 2025-07-13 12:43:46 | 消息发送 { chatType: 1, peerUid: 'u_RWJfB5Ran_OI-27YsuVJeA', guildId: '' }
+
+[info] | 2025-07-13 12:43:46 | [发-私] 清弦(1010411661)：
+你说: hello
+
+[info] | 2025-07-13 12:43:46 | 消息发送 { chatType: 1, peerUid: 'u_RWJfB5Ran_OI-27YsuVJeA', guildId: '' }
+
+[info] | 2025-07-13 12:43:46 | [发-私] 清弦(1010411661)：
+你说: hello
+
+[info] | 2025-07-13 12:44:05 | [收-私] 清弦(1010411661)：
+你好
+
+[info] | 2025-07-13 12:44:05 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws message.private
+
+[info] | 2025-07-13 12:44:05 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, message_type: 'private', message: [ { type: 'text', data: { text: '你说: 你好' } } ] }, echo: '3' }
+
+[info] | 2025-07-13 12:44:05 | 消息发送 { chatType: 1, peerUid: 'u_RWJfB5Ran_OI-27YsuVJeA', guildId: '' }
+
+[info] | 2025-07-13 12:44:05 | [发-私] 清弦(1010411661)：
+你说: 你好
+
+[info] | 2025-07-13 12:44:11 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-13 12:44:14 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-13 12:44:14 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-13 12:44:14 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-13 12:44:17 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:44:18 | Connected to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-13 12:44:18 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+

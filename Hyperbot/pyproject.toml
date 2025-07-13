@@ -1,0 +1,14 @@
+[project]
+name = "Hyperbot"
+version = "0.1.0"
+description = "Hyperbot"
+readme = "README.md"
+requires-python = ">=3.9, <4.0"
+
+[tool.nonebot]
+adapters = [
+    { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
+]
+plugins = ["nonebot_plugin_all4one", "nonebot_plugin_today_in_history"]
+plugin_dirs = []
+builtin_plugins = ["echo", "single_session"]
