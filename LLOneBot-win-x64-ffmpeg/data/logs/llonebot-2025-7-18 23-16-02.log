@@ -4789,3 +4789,73 @@
 
 [info] | 2025-07-19 02:31:00 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
 
+[info] | 2025-07-19 02:31:03 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:03 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:03 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:06 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:06 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:06 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:09 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:09 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:09 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:12 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:12 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:12 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:15 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:15 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:15 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:18 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-19 02:31:18 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-19 02:31:18 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:21 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:21 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:21 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:24 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:24 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:24 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:27 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-19 02:31:27 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-19 02:31:27 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-19 02:31:30 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-19 02:31:30 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-19 02:31:30 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
