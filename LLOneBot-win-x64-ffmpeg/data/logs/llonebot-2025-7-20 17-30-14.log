@@ -1,0 +1,332 @@
+[info] | 2025-07-20 17:30:15 | WebUI 端口: 3080
+
+[info] | 2025-07-20 17:30:15 | LLOneBot/5.4.1
+
+[info] | 2025-07-20 17:30:15 | OneBot V11 WebSocket server started 127.0.0.1:3001
+
+[info] | 2025-07-20 17:30:15 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:30:15 | OneBot V11 HTTP SSE started 127.0.0.1:3000/_events
+
+[info] | 2025-07-20 17:30:15 | OneBot V11 HTTP server started 127.0.0.1:3000
+
+[error] | 2025-07-20 17:30:15 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:30:15 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:30:18 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:30:18 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:30:18 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:30:21 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:30:21 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:30:21 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:30:24 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:30:24 | Connected to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:30:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:31:00 | [收-群] 智能人工群(1038420096) 清弦(1010411661)：
+呼叫希儿，收到请回复，over
+
+[info] | 2025-07-20 17:31:00 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws message.group
+
+[info] | 2025-07-20 17:31:16 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, group_id: 1038420096, message_type: 'group', message: [ { type: 'text', data: { text: '中中中！ 咋啦哥 有啥指示' } } ] }, echo: '1' }
+
+[info] | 2025-07-20 17:31:16 | [发-群] 智能人工群(1038420096) 希儿（人工智能ProMax）(1634384467)：
+中中中！ 咋啦哥 有啥指示
+
+[info] | 2025-07-20 17:31:16 | 消息发送 { chatType: 2, peerUid: '1038420096', guildId: '' }
+
+[info] | 2025-07-20 17:31:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:32:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:33:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:34:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:35:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:36:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:37:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:38:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:39:24 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:39:53 | [收-群] 智能人工群(1038420096) 清弦(1010411661)：
+/收录知识 洛阳理工学院是河南省属全日制普通本科高等院校，坚持社会主义办学方向，落实立德树人根本任务。秉承“让政府放心，让社会满意，让学生受益”的办学理念，以及“致知、致善、致能、致新”的校训。有三个校区，王城校区： 位于洛阳市洛龙区王城大道90号。通常作为主校区，承担主要的教学、科研和行政功能。校园环境优美，建筑风格现代与典雅相结合。
+开元校区： 位于洛阳市洛龙区学子街8号。设施较新，主要承担部分理工科专业教学及学生生活功能。
+九都校区： 位于洛阳市涧西区九都西路71号。地理位置靠近市中心，主要承担部分文科、艺术类专业教学及继续教育等功能。计算机专业在开元校区
+
+[info] | 2025-07-20 17:39:53 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws message.group
+
+[info] | 2025-07-20 17:39:53 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, group_id: 1038420096, message_type: 'group', message: [ { type: 'text', data: { text: '错误：记忆系统未初始化，无法存储知识。' } } ] }, echo: '2' }
+
+[info] | 2025-07-20 17:39:53 | [发-群] 智能人工群(1038420096) 希儿（人工智能ProMax）(1634384467)：
+错误：记忆系统未初始化，无法存储知识。
+
+[info] | 2025-07-20 17:39:53 | 消息发送 { chatType: 2, peerUid: '1038420096', guildId: '' }
+
+[info] | 2025-07-20 17:40:02 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:40:05 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:40:05 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:05 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:40:08 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:40:08 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:08 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:40:11 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:40:11 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:11 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:40:14 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:40:14 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:40:14 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:17 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:40:17 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:17 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:40:20 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:40:20 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:20 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:40:23 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:40:23 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:40:23 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:26 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:40:26 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:40:26 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:40:29 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:40:29 | Connected to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:40:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:41:08 | [收-群] 智能人工群(1038420096) 清弦(1010411661)：
+/收录知识 洛阳理工学院是河南省属全日制普通本科高等院校，坚持社会主义办学方向，落实立德树人根本任务。秉承“让政府放心，让社会满意，让学生受益”的办学理念，以及“致知、致善、致能、致新”的校训。有三个校区，王城校区： 位于洛阳市洛龙区王城大道90号。通常作为主校区，承担主要的教学、科研和行政功能。校园环境优美，建筑风格现代与典雅相结合。
+开元校区： 位于洛阳市洛龙区学子街8号。设施较新，主要承担部分理工科专业教学及学生生活功能。
+九都校区： 位于洛阳市涧西区九都西路71号。地理位置靠近市中心，主要承担部分文科、艺术类专业教学及继续教育等功能。计算机专业在开元校区
+
+[info] | 2025-07-20 17:41:08 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws message.group
+
+[info] | 2025-07-20 17:41:08 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, group_id: 1038420096, message_type: 'group', message: [ { type: 'text', data: { text: '错误：记忆系统未初始化，无法存储知识。' } } ] }, echo: '1' }
+
+[info] | 2025-07-20 17:41:08 | [发-群] 智能人工群(1038420096) 希儿（人工智能ProMax）(1634384467)：
+错误：记忆系统未初始化，无法存储知识。
+
+[info] | 2025-07-20 17:41:08 | 消息发送 { chatType: 2, peerUid: '1038420096', guildId: '' }
+
+[info] | 2025-07-20 17:41:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:42:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:43:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:44:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:45:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:46:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:47:29 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:47:44 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:47:47 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:47:47 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:47:47 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:47:50 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:47:50 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:47:50 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:47:53 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[error] | 2025-07-20 17:47:53 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:47:53 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[info] | 2025-07-20 17:47:56 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:47:56 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:47:56 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:47:59 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:47:59 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:47:59 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:48:02 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:48:02 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:48:02 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:48:05 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:48:05 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:48:05 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:48:08 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:48:08 | The websocket connection: ws://127.0.0.1:8080/onebot/v11/ws closed, trying reconnecting...
+
+[error] | 2025-07-20 17:48:08 | Error: connect ECONNREFUSED 127.0.0.1:8080
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1636:16)
+
+[info] | 2025-07-20 17:48:11 | Trying to connect to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:48:11 | Connected to the websocket server: ws://127.0.0.1:8080/onebot/v11/ws
+
+[info] | 2025-07-20 17:48:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:48:40 | [收-群] 智能人工群(1038420096) 清弦(1010411661)：
+/收录知识 洛阳理工学院是河南省属全日制普通本科高等院校，坚持社会主义办学方向，落实立德树人根本任务。秉承“让政府放心，让社会满意，让学生受益”的办学理念，以及“致知、致善、致能、致新”的校训。有三个校区，王城校区： 位于洛阳市洛龙区王城大道90号。通常作为主校区，承担主要的教学、科研和行政功能。校园环境优美，建筑风格现代与典雅相结合。
+开元校区： 位于洛阳市洛龙区学子街8号。设施较新，主要承担部分理工科专业教学及学生生活功能。
+九都校区： 位于洛阳市涧西区九都西路71号。地理位置靠近市中心，主要承担部分文科、艺术类专业教学及继续教育等功能。计算机专业在开元校区
+
+[info] | 2025-07-20 17:48:40 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws message.group
+
+[info] | 2025-07-20 17:48:40 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, group_id: 1038420096, message_type: 'group', message: [ { type: 'text', data: { text: '正在分析知识并提取实体关系，请稍候...' } } ] }, echo: '1' }
+
+[info] | 2025-07-20 17:48:40 | [发-群] 智能人工群(1038420096) 希儿（人工智能ProMax）(1634384467)：
+正在分析知识并提取实体关系，请稍候...
+
+[info] | 2025-07-20 17:48:40 | 消息发送 { chatType: 2, peerUid: '1038420096', guildId: '' }
+
+[info] | 2025-07-20 17:48:57 | 收到反向 Websocket 消息 { action: 'send_msg', params: { user_id: 1010411661, group_id: 1038420096, message_type: 'group', message: [ { type: 'text', data: { text: '知识收录成功！\n- 新增/更新节点: 5个\n- 新增/更新关系: 4个' } } ] }, echo: '2' }
+
+[info] | 2025-07-20 17:48:58 | [发-群] 智能人工群(1038420096) 希儿（人工智能ProMax）(1634384467)：
+知识收录成功！
+- 新增/更新节点: 5个
+- 新增/更新关系: 4个
+
+[info] | 2025-07-20 17:48:58 | 消息发送 { chatType: 2, peerUid: '1038420096', guildId: '' }
+
+[info] | 2025-07-20 17:49:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:50:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:51:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:52:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:53:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:54:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:55:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:56:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:57:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:58:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 17:59:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:00:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:01:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:02:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:03:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:04:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:05:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:06:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:07:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:08:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:09:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:10:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:11:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:12:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:13:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:14:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:15:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:16:11 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:17:12 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:18:12 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:19:12 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:20:12 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:21:12 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:22:12 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+
+[info] | 2025-07-20 18:22:21 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws notice.notify
+
+[info] | 2025-07-20 18:23:12 | WebSocket 事件上报 ws://127.0.0.1:8080/onebot/v11/ws meta_event
+

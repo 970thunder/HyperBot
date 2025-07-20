@@ -27,7 +27,7 @@ config = driver.config
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 
 # 群聊回复配置
-GROUP_REPLY_PROBABILITY = getattr(config, 'group_reply_probability', 0.3)
+GROUP_REPLY_PROBABILITY = getattr(config, 'group_reply_probability', 0.6)
 TRIGGER_KEYWORDS = getattr(config, 'trigger_keywords', ['希儿'])
 
 # 人设文件夹路径

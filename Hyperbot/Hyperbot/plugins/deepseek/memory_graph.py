@@ -1792,3 +1792,57 @@ class MemoryGraph:
         """析构函数"""
         self.close()
 
+    async def store_knowledge_graph(self, graph_data: Dict[str, List[Dict[str, Any]]]) -> bool:
+        """
+        将从知识中提取的图数据存入Neo4j。
+
+        Args:
+            graph_data: 包含 "nodes" 和 "relations" 的字典。
+        """
+        try:
+            with self.driver.session() as session:
+                # 存储节点
+                for node in graph_data.get('nodes', []):
+                    node_id = node.get('id')
+                    node_type = node.get('type', 'Knowledge')
+                    properties = node.get('properties', {})
+                    if not node_id:
+                        continue
+                    
+                    # 将id和type也放入properties中，方便查询
+                    properties['id'] = node_id
+                    properties['name'] = node_id # 使用name作为通用显示
+                    
+                    # 使用MERGE来创建或更新节点
+                    # 我们基于id和type来唯一确定一个节点
+                    session.run(f"""
+                        MERGE (n:{node_type} {{id: $id}})
+                        SET n += $props, n.last_updated = datetime()
+                    """, id=node_id, props=properties)
+                
+                # 存储关系
+                for relation in graph_data.get('relations', []):
+                    source_id = relation.get('source')
+                    target_id = relation.get('target')
+                    relation_type = relation.get('type')
+                    properties = relation.get('properties', {})
+
+                    if not source_id or not target_id or not relation_type:
+                        continue
+                    
+                    # 找到源节点和目标节点，并创建关系
+                    # 假设所有节点都已在上一步创建
+                    session.run("""
+                        MATCH (source {id: $source_id}), (target {id: $target_id})
+                        MERGE (source)-[r:`{relation_type}`]->(target)
+                        SET r += $props, r.last_updated = datetime()
+                    """.replace('{relation_type}', relation_type.upper().replace(' ', '_')), # 关系类型格式化
+                    source_id=source_id, target_id=target_id, props=properties)
+
+            logger.info(f"成功存储知识图谱，包含 {len(graph_data.get('nodes', []))} 个节点和 {len(graph_data.get('relations', []))} 个关系")
+            return True
+
+        except Exception as e:
+            logger.error(f"存储知识图谱失败: {e}")
+            return False
+

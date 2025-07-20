@@ -18,8 +18,8 @@ python-dotenv
 pydantic
 
 # 可选：如果需要本地嵌入模型
-# torch
-# transformers
+torch
+transformers
 
 # 开发和测试
 # pytest
