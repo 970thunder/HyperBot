@@ -323,26 +323,43 @@ def is_command_message(message_text: str) -> bool:
     
     return False
 
-def should_reply_in_group(event: MessageEvent, message_text: str) -> bool:
-    """判断在群聊中是否应该回复"""
+async def should_reply_in_group(session_id: str, event: MessageEvent, text: str) -> bool:
+    """更智能地判断在群聊中是否应该回复"""
+    # 1. 私聊必定回复
     if event.message_type == "private":
         return True
     
+    # 2. 被@时必定回复
     if hasattr(event, 'to_me') and event.to_me:
-        logger.info("群聊消息：被@到，必定回复")
+        logger.info("群聊消息：被@，触发回复")
         return True
-    
+
+    # 3. 消息以触发词开头时回复 (例如 "希儿，你好")
     for keyword in TRIGGER_KEYWORDS:
-        if keyword in message_text:
-            logger.info(f"群聊消息：提到触发词 '{keyword}'，必定回复")
+        if re.match(rf'^\s*{re.escape(keyword)}[\s,，!！?？]*', text, re.IGNORECASE):
+            logger.info(f"群聊消息：以触发词'{keyword}'开头，触发回复")
             return True
-    
-    should_reply = random.random() < GROUP_REPLY_PROBABILITY
-    logger.info(f"群聊消息：概率回复 ({GROUP_REPLY_PROBABILITY*100:.1f}%) - {'回复' if should_reply else '不回复'}")
-    return should_reply
+            
+    # 4. 基于相关性判断是否插话
+    if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
+        # 获取当前人设用于评估相关性
+        current_persona = persona_manager.get_persona(current_personas.get(session_id)) or persona_manager.get_default_persona()
+        if not current_persona:
+            return False # 没有人设无法判断相关性
+
+        relevance = await memory_system.calculate_interjection_relevance(
+            session_id=session_id,
+            current_message=text,
+            persona_content=current_persona['content']
+        )
+        if relevance > 0.5:
+            logger.info(f"群聊消息相关度 ({relevance:.2f}) > 0.5，触发插话")
+            return True
+
+    return False
 
 # 创建消息处理器
-chat_handler = on_message(priority=99, block=True)
+chat_handler = on_message(priority=99, block=False) # 改为非阻塞，允许插话
 
 @chat_handler.handle()
 async def handle_message(bot: Bot, event: MessageEvent):
@@ -372,7 +389,7 @@ async def handle_message(bot: Bot, event: MessageEvent):
         return
     
     # 群聊回复概率判断
-    if not should_reply_in_group(event, message_text):
+    if not await should_reply_in_group(session_id, event, message_text):
         return
     
     # 对于普通消息，进行整合处理
