@@ -41,7 +41,7 @@ PERSONA_CONFIG_FILE = PERSONA_DIR / "personas.json"
 current_personas: Dict[str, str] = {}
 
 # 消息缓存和定时器 - 用于消息整合
-message_cache: Dict[str, List[str]] = {}
+message_cache: Dict[str, List[Dict]] = {} # 修改为包含event的缓存
 message_timers: Dict[str, asyncio.Task] = {}
 MESSAGE_MERGE_TIMEOUT = 10
 
@@ -174,105 +174,100 @@ def split_text_by_sentences(text: str, min_sentences: int = 1, max_sentences: in
     
     return paragraphs if paragraphs else [text]
 
+def split_message_for_sending(text: str) -> List[str]:
+    """
+    将一段完整的回复，基于标点符号精确地分割成多条独立的句子。
+    """
+    if not text:
+        return []
+
+    # 清理文本，为分割做准备
+    text = clean_text(text)
+    
+    # 使用正则表达式分割句子。这个表达式会匹配各种结束标点，
+    # 并保留这些标点在句子的末尾。
+    sentences = re.split(r'(?<=[，。？！…~,!?])\s*', text)
+    
+    # 清理分割后的结果，去除空字符串
+    # 过滤掉只包含空格或标点的无意义短句
+    final_sentences = [s.strip() for s in sentences if s and s.strip() and not re.match(r'^[，。？！…~,!?\s]+$', s)]
+
+    return final_sentences if final_sentences else [text]
+
 async def send_messages_with_typing(bot: Bot, event: MessageEvent, messages: List[str]):
     """模拟真人打字效果发送消息"""
     for i, message in enumerate(messages):
-        if not message.strip():
-            continue
-            
-        typing_time = min(len(message) * 0.1, 3.0)
-        typing_time = max(typing_time, 0.5)
-        
-        if i > 0:
-            random_delay = random.uniform(0.5, 1.5)
-            await asyncio.sleep(random_delay)
-        
+        if not message.strip(): continue
+        # 根据消息长度估算打字时间
+        typing_time = max(0.5, min(len(message) * 0.08, 2.5))
         await asyncio.sleep(typing_time)
         await bot.send(event, message)
+        # 在多条消息之间加入随机延迟
+        if i < len(messages) - 1:
+            await asyncio.sleep(random.uniform(0.8, 1.8))
 
-async def process_merged_messages(bot: Bot, event: MessageEvent, session_id: str):
-    """处理整合后的消息"""
+async def process_merged_messages(bot: Bot, session_id: str):
+    """处理整合后的消息，现在不直接依赖event，更通用"""
     try:
-        messages = message_cache.get(session_id, [])
-        if not messages:
-            return
+        cached_data = message_cache.get(session_id)
+        if not cached_data: return
+
+        # 使用最后一条消息的event进行回复和身份识别
+        last_message_event = cached_data[-1]['event']
+        user_id = str(last_message_event.user_id)
+        user_nickname = last_message_event.sender.card or last_message_event.sender.nickname
         
+        # 整合所有消息文本
+        merged_message = ' '.join([msg['text'] for msg in cached_data])
         message_cache.pop(session_id, None)
-        merged_message = ' '.join(messages)
-        
+
         logger.info(f"处理整合消息 - 会话 {session_id}: {merged_message}")
-        
-        # 获取当前会话的人设
-        current_persona_name = current_personas.get(session_id)
-        if not current_persona_name:
-            default_persona = persona_manager.get_default_persona()
-            if default_persona:
-                current_persona_name = default_persona['name']
-                current_personas[session_id] = current_persona_name
-            else:
-                await bot.send(event, "请先设置人设或创建默认人设")
-                return
-        
-        current_persona = persona_manager.get_persona(current_persona_name)
-        if not current_persona:
-            await bot.send(event, f"人设 {current_persona_name} 不存在")
-            return
-        
-        # 使用记忆系统生成回复
-        user_id = str(event.user_id)
-        
-        if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
+
+        group_members = None
+        if last_message_event.message_type == 'group' and hasattr(last_message_event, 'group_id'):
             try:
-                # 使用带记忆的回复生成
-                response = await memory_system.generate_contextual_response(
-                    user_id=user_id,
-                    session_id=session_id,
-                    current_message=merged_message,
-                    persona_content=current_persona['content'],
-                    use_memory=True
-                )
+                group_id = int(last_message_event.group_id)
+                member_list = await bot.get_group_member_list(group_id=group_id, no_cache=True)
+                group_members = [{"user_id": str(m["user_id"]), "nickname": m.get("card") or m.get("nickname")} for m in member_list]
             except Exception as e:
-                logger.error(f"记忆系统回复生成失败: {e}")
-                # 降级到普通回复
-                response = await call_deepseek_api(merged_message, current_persona)
+                logger.error(f"获取群成员列表失败: {e}")
+
+        current_persona = persona_manager.get_persona(current_personas.get(session_id)) or persona_manager.get_default_persona()
+        if not current_persona:
+            await bot.send(last_message_event, "请先设置人设或创建默认人设")
+            return
+
+        response = ""
+        if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
+            response = await memory_system.generate_contextual_response(
+                user_id=user_id,
+                session_id=session_id,
+                current_message=merged_message,
+                persona_content=current_persona['content'],
+                user_nickname=user_nickname,
+                group_members=group_members
+            )
         else:
-            # 使用普通API回复
             response = await call_deepseek_api(merged_message, current_persona)
         
-        # 清理回复内容并分割
-        cleaned_response = clean_text(response)
-        if cleaned_response:
-            message_parts = split_text_by_sentences(cleaned_response, 1, 3)
-            await send_messages_with_typing(bot, event, message_parts)
-            
-            # 存储对话到记忆系统
-            if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
-                try:
-                    await memory_system.store_conversation(
-                        user_id=user_id,
-                        session_id=session_id,
-                        user_message=merged_message,
-                        bot_response=cleaned_response,
-                        persona_name=current_persona_name
-                    )
-                except Exception as e:
-                    logger.error(f"存储对话到记忆系统失败: {e}")
-            
-            logger.info(f"已用 {current_persona_name} 人设回复整合消息 - 会话 {session_id}")
+        if response:
+            # 最终过滤器：在分割前强行移除所有 || 符号
+            cleaned_text = re.sub(r'\s*[||]{2}\s*', ' ', response).strip()
+            message_parts = split_message_for_sending(cleaned_text)
+            await send_messages_with_typing(bot, last_message_event, message_parts)
+            logger.info(f"已用 {current_persona['name']} 人设回复整合消息 - 会话 {session_id}")
         
     except Exception as e:
         logger.error(f"处理整合消息时出错: {e}")
-        await bot.send(event, f"抱歉，出现错误：{str(e)}")
     finally:
-        if session_id in message_timers:
-            message_timers.pop(session_id)
+        message_timers.pop(session_id, None)
 
 async def schedule_message_processing(bot: Bot, event: MessageEvent, session_id: str):
     """安排消息处理定时器"""
     await asyncio.sleep(MESSAGE_MERGE_TIMEOUT)
     
     if session_id in message_timers:
-        await process_merged_messages(bot, event, session_id)
+        await process_merged_messages(bot, session_id) # 修改为直接调用 process_merged_messages
 
 async def call_deepseek_api(message: str, persona: Dict) -> str:
     """调用Deepseek API with persona"""
@@ -383,7 +378,7 @@ async def handle_message(bot: Bot, event: MessageEvent):
         if session_id in message_timers:
             message_timers[session_id].cancel()
             if session_id in message_cache and message_cache[session_id]:
-                await process_merged_messages(bot, event, session_id)
+                await process_merged_messages(bot, session_id) # 修改为直接调用 process_merged_messages
         
         await handle_command_message(bot, event, message_text, session_id)
         return
@@ -495,7 +490,7 @@ async def handle_regular_message(bot: Bot, event: MessageEvent, message_text: st
     
     if session_id not in message_cache:
         message_cache[session_id] = []
-    message_cache[session_id].append(message_text)
+    message_cache[session_id].append({'text': message_text, 'event': event}) # 存储event
     
     timer_task = asyncio.create_task(schedule_message_processing(bot, event, session_id))
     message_timers[session_id] = timer_task
