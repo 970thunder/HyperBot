@@ -320,8 +320,121 @@ class MemoryGraph:
         title = "== 相关记忆 ==" if context_type == "memory" else "== 近期对话 =="
         return f"{title}\n" + "\n".join(formatted_parts)
 
+    async def generate_contextual_response(self, user_id: str, session_id: str,
+                                         current_message: str, persona_content: str,
+                                         user_nickname: str = None, use_memory: bool = True,
+                                         group_members: List[Dict[str, str]] = None) -> str:
+        """基于记忆、事实核查和工具生成带上下文的回复"""
+        try:
+            # 1. 并行获取所有需要的数据
+            memory_task = self.retrieve_relevant_memories(user_id, current_message) if use_memory else asyncio.sleep(0, result=[])
+            context_task = self.get_conversation_context(session_id, 5) if use_memory else asyncio.sleep(0, result=[])
+            fact_check_task = self._fact_check_and_augment_prompt(current_message, group_members, user_id) if group_members else asyncio.sleep(0, result="")
+            knowledge_query_task = self.query_knowledge_graph(current_message)
+
+            relevant_memories, recent_context, fact_checking_results, knowledge_results = await asyncio.gather(
+                memory_task, context_task, fact_check_task, knowledge_query_task
+            )
+
+            # 2. 格式化记忆和上下文
+            memory_prompt = self.format_memory_for_prompt(relevant_memories, "memory")
+            context_prompt = self.format_memory_for_prompt(recent_context, "context")
+
+            # 3. 构建最终的prompt
+            system_prompt = persona_content
+            system_prompt += (
+                "\n\n【对话指令】\n"
+                "--- [绝对首要的规则] ---\n"
+                "**回复长度**: 你的核心任务是进行简短、自然的对话。在任何情况下，你的完整回复都不能超过3句话。默认只回复1-2句简短的话。只有当用户明确要求长篇幅（如“详细解释”、“写一段文字”）时，才能打破此限制。\n"
+                "--- [其他重要规则] ---\n"
+                "- **知识库**: 如果提供了“知识库参考”信息，你必须优先使用该信息来回答问题。\n"
+                "- **语气**: 像真人一样聊天，语气自然。\n"
+                "- **标点**: 可以使用各种标点符号（如 `，` `？` `…`）来表达情感，但请不要在单句末尾使用句号 `。`或者感叹号`！`。\n"
+                "- **严禁事项**: 绝对禁止在回复中使用 `||` 或 `｜｜` 这类分隔符。\n"
+                "- **事实**: 必须严格根据“事实核查”的结果进行回复，严禁伪造关于人物的记忆。\n"
+            )
+            
+            # 组合所有信息
+            full_context = "\n\n".join(filter(None, [knowledge_results, fact_checking_results, context_prompt, memory_prompt]))
+            if full_context:
+                system_prompt += "\n" + full_context
+            
+            # 4. 调用API生成最终回复
+            bot_response = await self._make_api_call(system_prompt, current_message, 0.8, 1000)
+
+            # 5. 异步存储本次对话，不阻塞回复发送
+            if bot_response:
+                asyncio.create_task(self.store_conversation(
+                    user_id, session_id, current_message, bot_response,
+                    persona_name=getattr(self, 'current_persona_name', None),
+                    user_nickname=user_nickname
+                ))
+            
+            return bot_response
+        except Exception as e:
+            logger.error(f"生成带上下文的回复失败: {e}")
+            return "我好像有点短路了，稍等一下"
+
+    async def query_knowledge_graph(self, message: str) -> str:
+        """
+        根据用户消息查询知识图谱，并将结果格式化用于prompt。
+        """
+        try:
+            # 1. 从消息中提取关键实体
+            prompt = f'从以下问句中，提取出最核心的1到2个查询实体（例如人名、地名、概念），以JSON数组的格式返回。例如，对于“洛阳理工学院的办学理念是什么？”，应返回["洛阳理工学院", "办学理念"]。\n\n问句："{message}"'
+            content = await self._make_api_call("你是一个实体提取助手，只返回JSON。", prompt, 0.0, 150)
+            entities = json.loads(content) if content else []
+            if not entities:
+                return ""
+
+            # 2. 在数据库中查询这些实体及其一度关系
+            def _db_read():
+                with self.driver.session() as session:
+                    # 针对第一个，也是最主要的实体进行查询
+                    main_entity = entities[0]
+                    cypher_query = """
+                    MATCH (n) WHERE n.name CONTAINS $entity OR n.id CONTAINS $entity
+                    OPTIONAL MATCH p=(n)-[r]-(m)
+                    RETURN p
+                    LIMIT 10
+                    """
+                    records = session.run(cypher_query, entity=main_entity)
+                    
+                    formatted_paths = set()
+                    for record in records:
+                        path = record["p"]
+                        if path is None: continue
+                        
+                        start_node = path.start_node
+                        end_node = path.end_node
+                        relationship = path.relationships[0]
+                        
+                        start_name = start_node.get('name', start_node.get('id', '未知节点'))
+                        end_name = end_node.get('name', end_node.get('id', '未知节点'))
+                        rel_type = relationship.type
+                        
+                        formatted_paths.add(f"({start_name})-[{rel_type}]->({end_name})")
+
+                    return list(formatted_paths)
+
+            knowledge_triples = await asyncio.to_thread(_db_read)
+            if not knowledge_triples:
+                return ""
+
+            # 3. 将结果格式化为prompt的一部分
+            knowledge_prompt = "== 知识库参考 ==\n" + "\n".join(knowledge_triples)
+            logger.info(f"从知识库检索到信息: \n{knowledge_prompt}")
+            return knowledge_prompt
+
+        except Exception as e:
+            logger.error(f"知识库查询失败: {e}")
+            return ""
+
     async def _fact_check_and_augment_prompt(self, message: str, group_members: List[Dict[str, str]], current_user_id: str) -> str:
-        """事实核查，并生成用于增强prompt的文本"""
+        """
+        事实核查：提取消息中的人名，检查他们是否存在于群聊或记忆中,
+        并生成用于增强prompt的文本。
+        """
         try:
             prompt = f'从以下句子中提取所有人名或昵称，以JSON数组格式返回。如果句子中没有人名，则返回空数组[]。\n\n句子："{message}"'
             content = await self._make_api_call("你是一个实体提取助手，只返回JSON。", prompt, 0.0, 100)
@@ -347,59 +460,6 @@ class MemoryGraph:
         except Exception as e:
             logger.error(f"事实核查失败: {e}")
             return ""
-
-    async def generate_contextual_response(self, user_id: str, session_id: str,
-                                         current_message: str, persona_content: str,
-                                         user_nickname: str = None, use_memory: bool = True,
-                                         group_members: List[Dict[str, str]] = None) -> str:
-        """基于记忆、事实核查和工具生成带上下文的回复"""
-        try:
-            # 1. 并行获取所有需要的数据
-            memory_task = self.retrieve_relevant_memories(user_id, current_message) if use_memory else asyncio.sleep(0, result=[])
-            context_task = self.get_conversation_context(session_id, 5) if use_memory else asyncio.sleep(0, result=[])
-            fact_check_task = self._fact_check_and_augment_prompt(current_message, group_members, user_id) if group_members else asyncio.sleep(0, result="")
-
-            relevant_memories, recent_context, fact_checking_results = await asyncio.gather(
-                memory_task, context_task, fact_check_task
-            )
-
-            # 2. 格式化记忆和上下文
-            memory_prompt = self.format_memory_for_prompt(relevant_memories, "memory")
-            context_prompt = self.format_memory_for_prompt(recent_context, "context")
-
-            # 3. 构建最终的prompt
-            system_prompt = persona_content
-            system_prompt += (
-                "\n\n【对话指令】\n"
-                "--- [绝对首要的规则] ---\n"
-                "**回复长度**: 你的核心任务是进行简短、自然的对话。在任何情况下，你的完整回复都不能超过3句话。默认只回复1-2句简短的话。只有当用户明确要求长篇幅（如“详细解释”、“写一段文字”）时，才能打破此限制。\n"
-                "--- [其他重要规则] ---\n"
-                "- **语气**: 像真人一样聊天，语气自然。\n"
-                "- **标点**: 可以使用各种标点符号（如 `，` `？` `…`）来表达情感，但请不要在单句末尾使用句号 `。`或者感叹号`！`。\n"
-                "- **严禁事项**: 绝对禁止在回复中使用 `||` 或 `｜｜` 这类分隔符。\n"
-                "- **事实**: 必须严格根据“事实核查”的结果进行回复，严禁伪造关于人物的记忆。\n"
-            )
-            
-            # 组合所有信息
-            full_context = "\n\n".join(filter(None, [fact_checking_results, context_prompt, memory_prompt]))
-            if full_context:
-                system_prompt += "\n" + full_context
-            
-            # 4. 调用API生成最终回复
-            bot_response = await self._make_api_call(system_prompt, current_message, 0.8, 1000)
-
-            # 5. 异步存储本次对话，不阻塞回复发送
-            if bot_response:
-                asyncio.create_task(self.store_conversation(
-                    user_id, session_id, current_message, bot_response,
-                    persona_name=getattr(self, 'current_persona_name', None),
-                    user_nickname=user_nickname
-                ))
-            
-            return bot_response
-        except Exception as e:
-            logger.error(f"生成带上下文的回复失败: {e}")
-            return "我好像有点短路了，稍等一下"
 
     async def calculate_interjection_relevance(self, session_id: str, current_message: str, persona_content: str) -> float:
         """
@@ -469,4 +529,57 @@ class MemoryGraph:
         except Exception as e:
             logger.error(f"根据实体检索记忆失败: {e}")
             return []
+
+    async def store_knowledge_graph(self, graph_data: Dict[str, List[Dict[str, Any]]]) -> bool:
+        """
+        将从知识中提取的图数据异步存入Neo4j。
+        """
+        def _db_write():
+            with self.driver.session() as session:
+                # 存储节点
+                for node in graph_data.get('nodes', []):
+                    node_id = node.get('id')
+                    node_type = node.get('type', 'Knowledge')
+                    properties = node.get('properties', {})
+                    if not node_id:
+                        continue
+                    
+                    properties['id'] = node_id
+                    properties['name'] = node_id # 使用name作为通用显示
+                    
+                    session.run(f"""
+                        MERGE (n:{node_type} {{id: $id}})
+                        SET n += $props, n.last_updated = datetime()
+                    """, id=node_id, props=properties)
+                
+                # 存储关系
+                for relation in graph_data.get('relations', []):
+                    source_id = relation.get('source')
+                    target_id = relation.get('target')
+                    relation_type = relation.get('type')
+                    properties = relation.get('properties', {})
+
+                    if not all([source_id, target_id, relation_type]):
+                        continue
+                    
+                    # 清理并验证关系类型，防止Cypher注入
+                    safe_relation_type = re.sub(r'[^a-zA-Z0-9_]', '', relation_type.upper().replace(' ', '_'))
+                    if not safe_relation_type:
+                        logger.warning(f"跳过无效的关系类型: {relation_type}")
+                        continue
+                    
+                    query = f"""
+                        MATCH (source {{id: $source_id}}), (target {{id: $target_id}})
+                        MERGE (source)-[r:`{safe_relation_type}`]->(target)
+                        SET r += $props, r.last_updated = datetime()
+                    """
+                    session.run(query, source_id=source_id, target_id=target_id, props=properties)
+
+        try:
+            await asyncio.to_thread(_db_write)
+            logger.info(f"成功存储知识图谱，包含 {len(graph_data.get('nodes', []))} 个节点和 {len(graph_data.get('relations', []))} 个关系")
+            return True
+        except Exception as e:
+            logger.error(f"存储知识图谱失败: {e}")
+            return False
 
