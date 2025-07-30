@@ -37,6 +37,9 @@ PERSONA_DIR.mkdir(exist_ok=True)
 # 人设配置文件路径
 PERSONA_CONFIG_FILE = PERSONA_DIR / "personas.json"
 
+# 群聊黑名单文件路径
+GROUP_BLACKLIST_FILE = Path(__file__).parent / "group_blacklist.txt"
+
 # 用户当前人设存储 {user_id: persona_name}
 current_personas: Dict[str, str] = {}
 
@@ -47,6 +50,55 @@ MESSAGE_MERGE_TIMEOUT = 10
 
 # 记忆系统实例
 memory_system: Optional[MemoryGraph] = None
+
+# 群聊黑名单
+group_blacklist: set = set()
+
+def load_group_blacklist():
+    """加载群聊黑名单"""
+    global group_blacklist
+    try:
+        if GROUP_BLACKLIST_FILE.exists():
+            with open(GROUP_BLACKLIST_FILE, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                group_blacklist = set()
+                for line in lines:
+                    line = line.strip()
+                    # 跳过注释行和空行
+                    if line and not line.startswith('#'):
+                        group_blacklist.add(line)
+            logger.info(f"已加载群聊黑名单，共 {len(group_blacklist)} 个群")
+        else:
+            # 创建默认黑名单文件
+            GROUP_BLACKLIST_FILE.touch()
+            logger.info("已创建群聊黑名单文件")
+    except Exception as e:
+        logger.error(f"加载群聊黑名单失败: {e}")
+
+def is_group_blacklisted(group_id: str) -> bool:
+    """检查群是否在黑名单中"""
+    return group_id in group_blacklist
+
+def reload_group_blacklist():
+    """重新加载群聊黑名单"""
+    load_group_blacklist()
+    logger.info("群聊黑名单已重新加载")
+
+def save_group_blacklist():
+    """保存群聊黑名单到文件"""
+    try:
+        with open(GROUP_BLACKLIST_FILE, 'w', encoding='utf-8') as f:
+            f.write("# 群聊黑名单配置文件\n")
+            f.write("# 每行一个群号，机器人将不会在这些群中响应消息\n")
+            f.write("# 格式示例：\n")
+            f.write("# 123456789\n")
+            f.write("# 987654321\n\n")
+            f.write("# 在下方添加需要屏蔽的群号，一行一个：\n")
+            for group_id in sorted(group_blacklist):
+                f.write(f"{group_id}\n")
+        logger.info("群聊黑名单已保存到文件")
+    except Exception as e:
+        logger.error(f"保存群聊黑名单失败: {e}")
 
 class PersonaManager:
     def __init__(self):
@@ -127,7 +179,8 @@ persona_manager = PersonaManager()
 
 def clean_text(text: str) -> str:
     """清理文本，去掉句号和其他不必要的标点符号"""
-    text = text.replace('。', '')
+    # 去掉句号、逗号等标点
+    text = text.replace('。', '').replace('，', '').replace(',', '').replace('.', '')
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -140,7 +193,7 @@ def split_text_by_sentences(text: str, min_sentences: int = 1, max_sentences: in
     if re.match(r'^[嗯啊哦咦诶]{1,3}[！？。~]*$', text):
         return [text]
     
-    """将文本按句子分割成多个部分，并清理句号"""
+    """将文本按句子分割成多个部分，并清理标点符号"""
     text = clean_text(text)
     
     sentences = re.split(r'([！？!?]+)', text)
@@ -176,21 +229,38 @@ def split_text_by_sentences(text: str, min_sentences: int = 1, max_sentences: in
 
 def split_message_for_sending(text: str) -> List[str]:
     """
-    将一段完整的回复，基于标点符号精确地分割成多条独立的句子。
+    将一段完整的回复分割成多条消息，去掉分隔符号
     """
     if not text:
         return []
 
-    # 清理文本，为分割做准备
+    # 清理文本，去掉标点符号
     text = clean_text(text)
     
-    # 使用正则表达式分割句子。这个表达式会匹配各种结束标点，
-    # 并保留这些标点在句子的末尾。
-    sentences = re.split(r'(?<=[，。？！…~,!?])\s*', text)
+    # 按照感叹号和问号分割，但保留这些符号
+    sentences = re.split(r'(?<=[！？!?])\s*', text)
     
-    # 清理分割后的结果，去除空字符串
-    # 过滤掉只包含空格或标点的无意义短句
-    final_sentences = [s.strip() for s in sentences if s and s.strip() and not re.match(r'^[，。？！…~,!?\s]+$', s)]
+    # 如果没有明显的分句标志，按长度分割
+    if len(sentences) <= 1:
+        # 简单按长度分割，每段不超过20字
+        words = list(text)
+        final_sentences = []
+        current = ""
+        for word in words:
+            current += word
+            if len(current) >= 15 and word in ['啊', '呢', '哦', '呀', '吧']:
+                final_sentences.append(current.strip())
+                current = ""
+        if current.strip():
+            final_sentences.append(current.strip())
+        return final_sentences if final_sentences else [text]
+    
+    # 清理分割后的结果，去除空字符串和纯标点
+    final_sentences = []
+    for s in sentences:
+        s = s.strip()
+        if s and not re.match(r'^[，。？！…~,!?\s]+$', s):
+            final_sentences.append(s)
 
     return final_sentences if final_sentences else [text]
 
@@ -251,8 +321,10 @@ async def process_merged_messages(bot: Bot, session_id: str):
             response = await call_deepseek_api(merged_message, current_persona)
         
         if response:
-            # 最终过滤器：在分割前强行移除所有 || 符号
+            # 最终过滤器：在分割前强行移除所有 || 符号和多余标点
             cleaned_text = re.sub(r'\s*[||]{2}\s*', ' ', response).strip()
+            # 去掉句号、逗号等分隔符号
+            cleaned_text = cleaned_text.replace('。', '').replace('，', '').replace(',', '').replace('.', '')
             message_parts = split_message_for_sending(cleaned_text)
             await send_messages_with_typing(bot, last_message_event, message_parts)
             logger.info(f"已用 {current_persona['name']} 人设回复整合消息 - 会话 {session_id}")
@@ -307,10 +379,16 @@ def is_command_message(message_text: str) -> bool:
     commands = [
         '人设列表', '查看人设', '人设', 
         '重新加载人设', '刷新人设', '重载人设',
-        '记忆统计', '记忆报告', '清理记忆', '记忆健康'
+        '记忆统计', '记忆报告', '清理记忆', '记忆健康',
+        '查看黑名单', '黑名单列表',
+        '重新加载黑名单', '刷新黑名单', '重载黑名单'
     ]
     
     if message_text in commands:
+        return True
+    
+    # 检查是否是黑名单管理命令
+    if message_text.startswith('添加黑名单 ') or message_text.startswith('移除黑名单 '):
         return True
     
     if persona_manager.get_persona_by_keyword(message_text):
@@ -363,6 +441,13 @@ async def handle_message(bot: Bot, event: MessageEvent):
     
     if not message_text:
         return
+    
+    # 检查群聊黑名单
+    if event.message_type == "group" and hasattr(event, 'group_id'):
+        group_id = str(event.group_id)
+        if is_group_blacklisted(group_id):
+            logger.debug(f"群 {group_id} 在黑名单中，跳过处理")
+            return
     
     # 获取会话标识
     if event.message_type == "private":
@@ -421,6 +506,52 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
     if message_text in ['重新加载人设', '刷新人设', '重载人设']:
         persona_manager.reload_personas()
         await bot.send(event, f"人设已重新加载！当前有 {len(persona_manager.personas)} 个人设")
+        return
+    
+    # 群聊黑名单管理命令
+    if message_text in ['查看黑名单', '黑名单列表']:
+        if group_blacklist:
+            reply = f"📋 当前黑名单群聊 ({len(group_blacklist)} 个):\n\n"
+            for group_id in sorted(group_blacklist):
+                reply += f"• {group_id}\n"
+            await bot.send(event, reply)
+        else:
+            await bot.send(event, "当前黑名单为空")
+        return
+    
+    if message_text.startswith('添加黑名单 '):
+        group_id_to_add = message_text.replace('添加黑名单 ', '').strip()
+        if group_id_to_add:
+            try:
+                group_blacklist.add(group_id_to_add)
+                # 保存到文件
+                save_group_blacklist()
+                await bot.send(event, f"已将群 {group_id_to_add} 添加到黑名单")
+                logger.info(f"用户 {user_id} 将群 {group_id_to_add} 添加到黑名单")
+            except Exception as e:
+                await bot.send(event, f"添加黑名单失败: {e}")
+        else:
+            await bot.send(event, "请提供要添加的群号")
+        return
+    
+    if message_text.startswith('移除黑名单 '):
+        group_id_to_remove = message_text.replace('移除黑名单 ', '').strip()
+        if group_id_to_remove:
+            if group_id_to_remove in group_blacklist:
+                group_blacklist.remove(group_id_to_remove)
+                # 保存到文件
+                save_group_blacklist()
+                await bot.send(event, f"已将群 {group_id_to_remove} 从黑名单移除")
+                logger.info(f"用户 {user_id} 将群 {group_id_to_remove} 从黑名单移除")
+            else:
+                await bot.send(event, f"群 {group_id_to_remove} 不在黑名单中")
+        else:
+            await bot.send(event, "请提供要移除的群号")
+        return
+    
+    if message_text in ['重新加载黑名单', '刷新黑名单', '重载黑名单']:
+        reload_group_blacklist()
+        await bot.send(event, f"黑名单已重新加载！当前有 {len(group_blacklist)} 个群在黑名单中")
         return
     
     # 记忆系统相关命令
@@ -547,6 +678,8 @@ async def startup_check():
     
     # 初始化记忆系统
     await init_memory_system()
+    # 加载群聊黑名单
+    reload_group_blacklist()
 
 # 关闭时清理
 @driver.on_shutdown
