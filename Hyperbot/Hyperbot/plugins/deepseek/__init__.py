@@ -15,10 +15,13 @@ from nonebot.plugin import PluginMetadata
 from .memory_graph import MemoryGraph
 from .memory_config import memory_config
 
+# 导入心流机制
+from ..Heartflow import heartflow_engine
+
 __plugin_meta__ = PluginMetadata(
     name="增强版Deepseek人设聊天",
-    description="支持多人设和长期记忆的智能聊天机器人",
-    usage="发送消息聊天，使用特定关键词切换人设，支持长期记忆功能",
+    description="支持多人设、长期记忆和心流机制的智能聊天机器人",
+    usage="发送消息聊天，使用特定关键词切换人设，支持智能回复判断和长期记忆功能",
 )
 
 # 获取配置
@@ -294,10 +297,12 @@ async def process_merged_messages(bot: Bot, session_id: str):
         logger.info(f"处理整合消息 - 会话 {session_id}: {merged_message}")
 
         group_members = None
+        group_id = None
         if last_message_event.message_type == 'group' and hasattr(last_message_event, 'group_id'):
+            group_id = str(last_message_event.group_id)
             try:
-                group_id = int(last_message_event.group_id)
-                member_list = await bot.get_group_member_list(group_id=group_id, no_cache=True)
+                group_id_int = int(last_message_event.group_id)
+                member_list = await bot.get_group_member_list(group_id=group_id_int, no_cache=True)
                 group_members = [{"user_id": str(m["user_id"]), "nickname": m.get("card") or m.get("nickname")} for m in member_list]
             except Exception as e:
                 logger.error(f"获取群成员列表失败: {e}")
@@ -328,6 +333,10 @@ async def process_merged_messages(bot: Bot, session_id: str):
             message_parts = split_message_for_sending(cleaned_text)
             await send_messages_with_typing(bot, last_message_event, message_parts)
             logger.info(f"已用 {current_persona['name']} 人设回复整合消息 - 会话 {session_id}")
+            
+            # 群聊回复后消耗心流精力
+            if group_id:
+                heartflow_engine.consume_energy(group_id)
         
     except Exception as e:
         logger.error(f"处理整合消息时出错: {e}")
@@ -381,7 +390,8 @@ def is_command_message(message_text: str) -> bool:
         '重新加载人设', '刷新人设', '重载人设',
         '记忆统计', '记忆报告', '清理记忆', '记忆健康',
         '查看黑名单', '黑名单列表',
-        '重新加载黑名单', '刷新黑名单', '重载黑名单'
+        '重新加载黑名单', '刷新黑名单', '重载黑名单',
+        '心流状态', '群聊状态', '心流统计'  # 新增心流相关命令
     ]
     
     if message_text in commands:
@@ -397,9 +407,10 @@ def is_command_message(message_text: str) -> bool:
     return False
 
 async def should_reply_in_group(session_id: str, event: MessageEvent, text: str) -> bool:
-    """更智能地判断在群聊中是否应该回复"""
+    """使用心流机制智能判断在群聊中是否应该回复"""
     # 1. 私聊必定回复
     if event.message_type == "private":
+        logger.info(f"[DEBUG] 私聊消息，必定回复")
         return True
     
     # 2. 被@时必定回复
@@ -412,34 +423,86 @@ async def should_reply_in_group(session_id: str, event: MessageEvent, text: str)
         if re.match(rf'^\s*{re.escape(keyword)}[\s,，!！?？]*', text, re.IGNORECASE):
             logger.info(f"群聊消息：以触发词'{keyword}'开头，触发回复")
             return True
-            
-    # 4. 基于相关性判断是否插话
-    if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
-        # 获取当前人设用于评估相关性
+    
+    # 4. 使用心流机制进行智能判断
+    if hasattr(event, 'group_id'):
+        group_id = str(event.group_id)
+        user_id = str(event.user_id)
+        nickname = event.sender.card or event.sender.nickname or ""
+        
+        # 获取当前人设名称
         current_persona = persona_manager.get_persona(current_personas.get(session_id)) or persona_manager.get_default_persona()
-        if not current_persona:
-            return False # 没有人设无法判断相关性
+        persona_name = current_persona['name'] if current_persona else ""
+        
+        logger.info(f"[DEBUG] 开始心流判断 - 群 {group_id}, 用户 {user_id}, 人设 {persona_name}")
+        
+        try:
+            should_reply, decision_info = await heartflow_engine.should_reply(
+                group_id=group_id,
+                user_id=user_id,
+                message=text,
+                nickname=nickname,
+                persona_name=persona_name
+            )
+            
+            if should_reply:
+                logger.info(f"心流决策：群聊 {group_id} 触发回复 - {decision_info.get('reason', '通过综合分析')}")
+                logger.debug(f"心流决策详情: {decision_info}")
+            else:
+                logger.info(f"心流决策：群聊 {group_id} 不回复 - {decision_info.get('reason', '未达到回复阈值')}")
+            
+            return should_reply
+            
+        except Exception as e:
+            logger.error(f"心流机制判断失败: {e}")
+            logger.error(f"异常详情: {type(e).__name__}: {str(e)}")
+            
+            # 回退策略1: 基于记忆系统的相关性判断
+            if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
+                try:
+                    current_persona = persona_manager.get_persona(current_personas.get(session_id)) or persona_manager.get_default_persona()
+                    if current_persona:
+                        relevance = await memory_system.calculate_interjection_relevance(
+                            session_id=session_id,
+                            current_message=text,
+                            persona_content=current_persona['content']
+                        )
+                        if relevance > 0.5:
+                            logger.info(f"回退策略1：群聊消息相关度 ({relevance:.2f}) > 0.5，触发插话")
+                            return True
+                except Exception as e2:
+                    logger.error(f"记忆系统回退策略也失败: {e2}")
+            
+            # 回退策略2: 简单的规则判断
+            logger.info(f"使用简单规则回退策略")
+            if any(keyword in text.lower() for keyword in ["?", "？", "怎么", "为什么", "帮助", "求助"]):
+                logger.info(f"回退策略2：消息包含问题关键词，触发回复")
+                return True
+            
+            # 回退策略3: 基于消息长度的简单判断
+            if len(text) > 10 and len(text) < 100:
+                # 30%概率回复中等长度的消息
+                import random
+                if random.random() < 0.3:
+                    logger.info(f"回退策略3：随机策略触发回复")
+                    return True
 
-        relevance = await memory_system.calculate_interjection_relevance(
-            session_id=session_id,
-            current_message=text,
-            persona_content=current_persona['content']
-        )
-        if relevance > 0.5:
-            logger.info(f"群聊消息相关度 ({relevance:.2f}) > 0.5，触发插话")
-            return True
-
+    logger.info(f"[DEBUG] 所有判断策略都未触发回复")
     return False
 
-# 创建消息处理器
-chat_handler = on_message(priority=99, block=False) # 改为非阻塞，允许插话
+# 创建消息处理器 - 调整优先级确保能处理到消息
+chat_handler = on_message(priority=10, block=False)  # 提高优先级从99改为10
 
 @chat_handler.handle()
 async def handle_message(bot: Bot, event: MessageEvent):
     user_id = str(event.user_id)
     message_text = event.get_plaintext().strip()
     
+    # 添加调试日志确认消息处理器被调用
+    logger.info(f"[DEBUG] 消息处理器被调用 - 用户 {user_id}, 消息类型: {event.message_type}, 消息内容: '{message_text}'")
+    
     if not message_text:
+        logger.debug(f"[DEBUG] 消息为空，跳过处理")
         return
     
     # 检查群聊黑名单
@@ -460,6 +523,7 @@ async def handle_message(bot: Bot, event: MessageEvent):
     
     # 检查是否是命令消息
     if is_command_message(message_text):
+        logger.info(f"[DEBUG] 识别为命令消息: {message_text}")
         if session_id in message_timers:
             message_timers[session_id].cancel()
             if session_id in message_cache and message_cache[session_id]:
@@ -468,11 +532,17 @@ async def handle_message(bot: Bot, event: MessageEvent):
         await handle_command_message(bot, event, message_text, session_id)
         return
     
-    # 群聊回复概率判断
-    if not await should_reply_in_group(session_id, event, message_text):
+    # 群聊回复概率判断 - 现在由心流机制处理
+    logger.info(f"[DEBUG] 开始进行回复判断 - 会话 {session_id}")
+    should_reply = await should_reply_in_group(session_id, event, message_text)
+    logger.info(f"[DEBUG] 回复判断结果: {should_reply}")
+    
+    if not should_reply:
+        logger.info(f"[DEBUG] 决定不回复，结束处理")
         return
     
     # 对于普通消息，进行整合处理
+    logger.info(f"[DEBUG] 开始处理普通消息")
     await handle_regular_message(bot, event, message_text, session_id)
 
 async def handle_command_message(bot: Bot, event: MessageEvent, message_text: str, session_id: str):
@@ -506,6 +576,29 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
     if message_text in ['重新加载人设', '刷新人设', '重载人设']:
         persona_manager.reload_personas()
         await bot.send(event, f"人设已重新加载！当前有 {len(persona_manager.personas)} 个人设")
+        return
+    
+    # 心流机制相关命令
+    if message_text in ['心流状态', '群聊状态', '心流统计']:
+        if event.message_type == "group" and hasattr(event, 'group_id'):
+            group_id = str(event.group_id)
+            try:
+                stats = heartflow_engine.get_stats(group_id)
+                if "error" not in stats:
+                    reply = f"💫 群聊心流状态报告:\n\n"
+                    reply += f"🔋 当前精力: {stats['energy']}/1.0\n"
+                    reply += f"📊 今日消息: {stats['total_messages_today']} 条\n"
+                    reply += f"💬 今日回复: {stats['bot_replies_today']} 次\n"
+                    reply += f"📈 回复率: {stats['reply_rate']*100:.1f}%\n"
+                    reply += f"⏰ 上次回复: {stats['last_reply_ago']} 分钟前\n"
+                    reply += f"📝 消息缓存: {stats['recent_messages_count']} 条"
+                    await bot.send(event, reply)
+                else:
+                    await bot.send(event, f"获取心流状态失败: {stats['error']}")
+            except Exception as e:
+                await bot.send(event, f"获取心流状态失败: {e}")
+        else:
+            await bot.send(event, "心流状态查询仅支持群聊")
         return
     
     # 群聊黑名单管理命令
@@ -672,14 +765,55 @@ async def startup_check():
         for persona in persona_manager.list_personas():
             logger.info(f"- {persona['name']}: {', '.join(persona['keywords'])}")
     
-    # 显示群聊回复配置
-    logger.info(f"群聊回复概率: {GROUP_REPLY_PROBABILITY*100:.1f}%")
+    # 显示群聊回复配置 - 现在使用心流机制
+    logger.info("群聊回复已切换到心流机制")
     logger.info(f"触发词: {', '.join(TRIGGER_KEYWORDS)}")
+    
+    # 检查心流机制配置
+    try:
+        logger.info(f"心流引擎状态检查:")
+        logger.info(f"- API密钥: {heartflow_engine.api_key[:8] + '...' if heartflow_engine.api_key else '未设置'}")
+        logger.info(f"- 配置阈值: {heartflow_engine.config.reply_threshold}")
+        logger.info(f"- 精力衰减率: {heartflow_engine.config.energy_decay_rate}")
+        logger.info(f"- 最小回复间隔: {heartflow_engine.config.min_reply_interval}秒")
+        
+        if not heartflow_engine.api_key:
+            logger.warning("心流机制：未配置SILICONFLOW_API_KEY，将使用回退策略")
+        else:
+            logger.info("心流机制：已启用智能回复判断")
+            # 测试心流引擎的基本功能
+            test_group_id = "test_group"
+            test_state = heartflow_engine.get_group_state(test_group_id)
+            logger.info(f"心流引擎功能测试通过，初始精力: {test_state.energy}")
+    except Exception as e:
+        logger.error(f"心流引擎状态检查失败: {e}")
+        logger.error(f"心流引擎对象: {heartflow_engine}")
+        logger.error(f"心流引擎配置: {getattr(heartflow_engine, 'config', 'None')}")
     
     # 初始化记忆系统
     await init_memory_system()
     # 加载群聊黑名单
     reload_group_blacklist()
+
+    # 检查OneBot连接状态
+    try:
+        from nonebot import get_bots
+        bots = get_bots()
+        
+        if bots:
+            logger.info(f"✅ OneBot连接状态: 已连接 {len(bots)} 个机器人")
+            for bot_id, bot in bots.items():
+                logger.info(f"   - Bot ID: {bot_id}, 适配器: {bot.adapter.get_name()}")
+        else:
+            logger.warning("❌ OneBot连接状态: 没有机器人连接")
+            logger.warning("   可能原因:")
+            logger.warning("   1. go-cqhttp或其他OneBot客户端未启动")
+            logger.warning("   2. WebSocket连接配置错误")
+            logger.warning("   3. 连接地址应为: ws://127.0.0.1:8080/onebot/v11/ws")
+            logger.warning("   请检查OneBot客户端配置并重启")
+            
+    except Exception as e:
+        logger.error(f"OneBot连接状态检查失败: {e}")
 
 # 关闭时清理
 @driver.on_shutdown
