@@ -7,6 +7,16 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 from nonebot import logger
 import os
+from asyncio import Semaphore
+import concurrent.futures
+from functools import lru_cache
+
+# 导入优化组件
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent / 'deepseek'))
+from api_pool import get_siliconflow_manager, cleanup_global_api_pool
+from cache_manager import get_global_cache, AnalysisCache
 
 # 添加dotenv支持
 try:
@@ -45,6 +55,21 @@ class HeartflowEngine:
         
         # 多种方式尝试获取API密钥
         self.api_key = self._get_api_key()
+        
+        # 并发控制
+        self.api_semaphore = Semaphore(100)  # API调用并发控制
+        self.cache_semaphore = Semaphore(5)  # 缓存操作并发控制
+        
+        # 缓存
+        self.decision_cache = {}  # 决策缓存
+        self.analysis_cache = {}  # AI分析缓存
+        
+        # 全局缓存管理器 - 延迟初始化
+        self.global_cache = None
+        self.analysis_cache_manager = None
+        
+        # 线程池用于CPU密集型任务
+        self.thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=10, thread_name_prefix="heartflow")
         
         if not self.api_key:
             logger.warning("未设置SILICONFLOW_API_KEY环境变量，将无法使用心流机制")
@@ -142,10 +167,15 @@ class HeartflowEngine:
         if len(state.recent_messages) > self.config.context_messages_count:
             state.recent_messages.pop(0)
     
+    async def _add_message_async(self, group_id: str, user_id: str, message: str, nickname: str = ""):
+        """异步添加消息到上下文"""
+        # 在线程池中执行，避免阻塞
+        await asyncio.to_thread(self.add_message, group_id, user_id, message, nickname)
+    
     async def should_reply(self, group_id: str, user_id: str, message: str, 
                           nickname: str = "", persona_name: str = "") -> Tuple[bool, Dict]:
         """
-        核心决策函数：判断是否应该回复
+        核心决策函数：判断是否应该回复 - 优化版本
         返回: (是否回复, 决策详情)
         """
         if not self.api_key:
@@ -165,12 +195,26 @@ class HeartflowEngine:
                 "details": basic_checks
             }
         
-        # 2. 添加消息到上下文
-        self.add_message(group_id, user_id, message, nickname)
+        # 2. 并行处理：添加消息到上下文和检查缓存
+        cache_key = f"{group_id}_{hash(message)}_{persona_name}"
         
-        # 3. 使用小模型进行智能判断
+        # 并行任务
+        tasks = []
+        tasks.append(self._add_message_async(group_id, user_id, message, nickname))
+        tasks.append(self._get_cached_analysis(cache_key, message, persona_name, state))
+        
+        # 等待任务完成
+        _, cached_analysis = await asyncio.gather(*tasks)
+        
+        # 3. 使用缓存或AI分析
         try:
-            analysis = await self._analyze_message_with_ai(state, message, persona_name)
+            if cached_analysis:
+                analysis = cached_analysis
+                logger.info(f"使用缓存的AI分析结果")
+            else:
+                analysis = await self._analyze_message_with_ai_optimized(state, message, persona_name)
+                # 缓存结果
+                asyncio.create_task(self._cache_analysis(cache_key, analysis))
             
             # 4. 综合评分决策
             decision_result = self._make_final_decision(state, analysis)
@@ -221,7 +265,7 @@ class HeartflowEngine:
         
         return {"can_reply": True, "reason": "通过基础检查"}
     
-    async def _analyze_message_with_ai(self, state: GroupState, message: str, persona_name: str) -> Dict:
+    async def _analyze_message_with_ai_optimized(self, state: GroupState, message: str, persona_name: str) -> Dict:
         """使用AI分析消息"""
         
         # 构建上下文
@@ -277,89 +321,112 @@ class HeartflowEngine:
                 ]
             }
             
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url, 
-                    json=payload, 
-                    headers=headers, 
-                    timeout=self.config.api_timeout
-                )
-                response.raise_for_status()
-                
-                result = response.json()
-                ai_response = result["choices"][0]["message"]["content"]
-                
-                # 尝试解析JSON响应 - 使用与测试脚本相同的成功逻辑
-                try:
-                    # 首先尝试直接解析JSON
-                    analysis = json.loads(ai_response)
-                    logger.debug(f"直接解析JSON成功")
-                except json.JSONDecodeError:
-                    # 如果直接解析失败，尝试提取markdown中的JSON
+            # 使用信号量控制并发和连接池
+            async with self.api_semaphore:
+                async with httpx.AsyncClient(
+                    limits=httpx.Limits(max_keepalive_connections=10, max_connections=50),
+                    timeout=httpx.Timeout(self.config.api_timeout, connect=10.0, read=50.0)
+                ) as client:
+                    response = await client.post(
+                        url, 
+                        json=payload, 
+                        headers=headers
+                    )
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    ai_response = result["choices"][0]["message"]["content"]
+                    
+                    # 尝试解析JSON响应 - 使用与测试脚本相同的成功逻辑
                     try:
-                        import re
-                        # 查找```json...```或```...```包装的JSON
-                        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', ai_response, re.DOTALL)
-                        if json_match:
-                            json_str = json_match.group(1).strip()
-                            analysis = json.loads(json_str)
-                            logger.debug(f"从markdown中成功解析JSON")
-                        else:
-                            # 尝试查找第一个完整的JSON对象
-                            json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+                        # 首先尝试直接解析JSON
+                        analysis = json.loads(ai_response)
+                        logger.debug(f"直接解析JSON成功")
+                    except json.JSONDecodeError:
+                        # 如果直接解析失败，尝试提取markdown中的JSON
+                        try:
+                            import re
+                            # 查找```json...```或```...```包装的JSON
+                            json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', ai_response, re.DOTALL)
                             if json_match:
-                                json_str = json_match.group(0)
+                                json_str = json_match.group(1).strip()
                                 analysis = json.loads(json_str)
-                                logger.debug(f"成功提取JSON对象")
+                                logger.debug(f"从markdown中成功解析JSON")
                             else:
-                                raise ValueError("无法找到有效的JSON内容")
-                    except (json.JSONDecodeError, ValueError) as e2:
-                        logger.warning(f"AI响应JSON解析完全失败: {e2}")
-                        logger.warning(f"原始响应: {ai_response}")
-                        return self._generate_fallback_analysis(message)
-                
-                # 验证必要字段
-                required_fields = ["content_relevance", "reply_willingness", 
-                                 "social_appropriateness", "timing_appropriateness"]
-                
-                # 检查字段存在性和类型
-                missing_fields = []
-                invalid_fields = []
-                
-                for field in required_fields:
-                    if field not in analysis:
-                        missing_fields.append(field)
-                    elif not isinstance(analysis[field], (int, float)):
-                        invalid_fields.append(f"{field}={analysis[field]} (type: {type(analysis[field]).__name__})")
-                
-                if missing_fields or invalid_fields:
-                    logger.warning(f"AI响应字段验证失败:")
-                    if missing_fields:
-                        logger.warning(f"  缺少字段: {missing_fields}")
-                    if invalid_fields:
-                        logger.warning(f"  无效字段: {invalid_fields}")
-                    logger.warning(f"  原始分析结果: {analysis}")
-                    return self._generate_fallback_analysis(message)
-                
-                # 验证字段值范围（0-10）
-                out_of_range_fields = []
-                for field in required_fields:
-                    value = analysis[field]
-                    if not (0 <= value <= 10):
-                        out_of_range_fields.append(f"{field}={value}")
-                
-                if out_of_range_fields:
-                    logger.warning(f"AI响应字段值超出范围(0-10): {out_of_range_fields}")
-                    # 不使用回退策略，而是修正数值
+                                # 尝试查找第一个完整的JSON对象
+                                json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+                                if json_match:
+                                    json_str = json_match.group(0)
+                                    analysis = json.loads(json_str)
+                                    logger.debug(f"成功提取JSON对象")
+                                else:
+                                    raise ValueError("无法找到有效的JSON内容")
+                        except (json.JSONDecodeError, ValueError) as e2:
+                            logger.warning(f"AI响应JSON解析完全失败: {e2}")
+                            logger.warning(f"原始响应: {ai_response}")
+                            # 尝试更宽松的JSON提取
+                            try:
+                                # 移除所有markdown标记
+                                cleaned_response = re.sub(r'```.*?```', '', ai_response, flags=re.DOTALL)
+                                cleaned_response = re.sub(r'`.*?`', '', cleaned_response)
+                                cleaned_response = cleaned_response.strip()
+                                
+                                # 查找JSON对象
+                                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned_response)
+                                if json_match:
+                                    json_str = json_match.group(0)
+                                    analysis = json.loads(json_str)
+                                    logger.info(f"使用宽松模式成功解析JSON")
+                                else:
+                                    raise ValueError("无法找到有效的JSON内容")
+                            except (json.JSONDecodeError, ValueError) as e3:
+                                logger.error(f"宽松模式JSON解析也失败: {e3}")
+                                return self._generate_fallback_analysis(message)
+                    
+                    # 验证必要字段
+                    required_fields = ["content_relevance", "reply_willingness", 
+                                     "social_appropriateness", "timing_appropriateness"]
+                    
+                    # 检查字段存在性和类型
+                    missing_fields = []
+                    invalid_fields = []
+                    
                     for field in required_fields:
-                        analysis[field] = max(0, min(10, analysis[field]))
-                    logger.info(f"已修正字段值范围")
-                
-                logger.debug(f"AI分析成功解析: {analysis}")
-                return analysis
+                        if field not in analysis:
+                            missing_fields.append(field)
+                        elif not isinstance(analysis[field], (int, float)):
+                            invalid_fields.append(f"{field}={analysis[field]} (type: {type(analysis[field]).__name__})")
+                    
+                    if missing_fields or invalid_fields:
+                        logger.warning(f"AI响应字段验证失败:")
+                        if missing_fields:
+                            logger.warning(f"  缺少字段: {missing_fields}")
+                        if invalid_fields:
+                            logger.warning(f"  无效字段: {invalid_fields}")
+                        logger.warning(f"  原始分析结果: {analysis}")
+                        return self._generate_fallback_analysis(message)
+                    
+                    # 验证字段值范围（0-10）
+                    out_of_range_fields = []
+                    for field in required_fields:
+                        value = analysis[field]
+                        if not (0 <= value <= 10):
+                            out_of_range_fields.append(f"{field}={value}")
+                    
+                    if out_of_range_fields:
+                        logger.warning(f"AI响应字段值超出范围(0-10): {out_of_range_fields}")
+                        # 不使用回退策略，而是修正数值
+                        for field in required_fields:
+                            analysis[field] = max(0, min(10, analysis[field]))
+                        logger.info(f"已修正字段值范围")
+                    
+                    logger.debug(f"AI分析成功解析: {analysis}")
+                    return analysis
                 
         except Exception as e:
-            logger.error(f"调用硅基流动API失败: {e}")
+            logger.error(f"调用硅基流动API失败: {type(e).__name__}: {e}")
+            logger.error(f"API URL: {url}")
+            logger.error(f"API Key: {self.api_key[:10]}..." if self.api_key else "API Key: None")
             return self._generate_fallback_analysis(message)
     
     def _generate_fallback_analysis(self, message: str) -> Dict:
@@ -443,6 +510,79 @@ class HeartflowEngine:
             "recent_messages_count": len(state.recent_messages),
             "config": asdict(self.config)
         }
+    
+    async def _get_cached_analysis(self, cache_key: str, message: str, persona_name: str, state: GroupState) -> Optional[Dict]:
+        """获取缓存的AI分析结果"""
+        # 初始化缓存管理器（如果需要）
+        if self.global_cache is None:
+            self.global_cache = get_global_cache()
+            self.analysis_cache_manager = AnalysisCache(self.global_cache)
+        
+        # 尝试从全局缓存获取
+        if self.analysis_cache_manager:
+            try:
+                cached_analysis = await self.analysis_cache_manager.get_analysis(
+                    message, "", persona_name  # 这里可以传入context
+                )
+                if cached_analysis:
+                    return cached_analysis
+            except Exception as e:
+                logger.error(f"获取全局缓存分析失败: {e}")
+        
+        # 回退到本地缓存
+        try:
+            async with self.cache_semaphore:
+                if cache_key in self.analysis_cache:
+                    cached_data = self.analysis_cache[cache_key]
+                    # 检查缓存是否过期（5分钟）
+                    if time.time() - cached_data['timestamp'] < 300:
+                        return cached_data['analysis']
+                    else:
+                        # 清理过期缓存
+                        del self.analysis_cache[cache_key]
+        except Exception as e:
+            logger.error(f"获取本地缓存分析失败: {e}")
+        return None
+    
+    async def _cache_analysis(self, cache_key: str, analysis: Dict):
+        """缓存AI分析结果"""
+        # 缓存到全局缓存
+        if self.analysis_cache_manager:
+            try:
+                # 这里需要传入正确的参数，暂时跳过
+                pass
+            except Exception as e:
+                logger.error(f"缓存到全局缓存失败: {e}")
+        
+        # 缓存到本地缓存
+        try:
+            async with self.cache_semaphore:
+                self.analysis_cache[cache_key] = {
+                    'analysis': analysis,
+                    'timestamp': time.time()
+                }
+                # 限制缓存大小
+                if len(self.analysis_cache) > 100:
+                    # 删除最旧的缓存
+                    oldest_key = min(self.analysis_cache.keys(), 
+                                   key=lambda k: self.analysis_cache[k]['timestamp'])
+                    del self.analysis_cache[oldest_key]
+        except Exception as e:
+            logger.error(f"缓存分析失败: {e}")
+    
+    def cleanup(self):
+        """清理资源"""
+        if hasattr(self, 'thread_pool'):
+            self.thread_pool.shutdown(wait=True)
+        self.analysis_cache.clear()
+        self.decision_cache.clear()
 
 # 全局心流引擎实例 - 延迟初始化
-heartflow_engine = HeartflowEngine() 
+heartflow_engine = HeartflowEngine()
+
+# 清理函数
+def cleanup_heartflow():
+    """清理心流引擎资源"""
+    if 'heartflow_engine' in globals():
+        heartflow_engine.cleanup()
+        logger.info("心流引擎资源已清理") 

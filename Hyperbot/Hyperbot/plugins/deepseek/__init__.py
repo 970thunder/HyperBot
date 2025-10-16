@@ -18,6 +18,10 @@ from .memory_config import memory_config
 # 导入心流机制
 from ..Heartflow import heartflow_engine
 
+# 导入优化组件
+from .api_pool import get_deepseek_manager, get_siliconflow_manager, cleanup_global_api_pool
+from .cache_manager import get_global_cache, EmbeddingCache, AnalysisCache, ResponseCache, cleanup_global_cache
+
 __plugin_meta__ = PluginMetadata(
     name="增强版Deepseek人设聊天",
     description="支持多人设、长期记忆和心流机制的智能聊天机器人",
@@ -46,10 +50,37 @@ GROUP_BLACKLIST_FILE = Path(__file__).parent / "group_blacklist.txt"
 # 用户当前人设存储 {user_id: persona_name}
 current_personas: Dict[str, str] = {}
 
-# 消息缓存和定时器 - 用于消息整合
+# 消息缓存和定时器 - 优化为即时处理
 message_cache: Dict[str, List[Dict]] = {} # 修改为包含event的缓存
 message_timers: Dict[str, asyncio.Task] = {}
-MESSAGE_MERGE_TIMEOUT = 10
+MESSAGE_MERGE_TIMEOUT = 2  # 大幅减少整合时间从10秒到2秒
+
+# 并发处理池
+import concurrent.futures
+from asyncio import Semaphore
+
+# API并发控制
+api_semaphore = Semaphore(50)  # 允许50个并发API调用
+heartflow_semaphore = Semaphore(20)  # 心流判断并发控制
+memory_semaphore = Semaphore(10)  # 记忆系统并发控制
+
+# 线程池用于CPU密集型任务
+thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=20, thread_name_prefix="hyperbot")
+
+# 缓存管理器 - 延迟初始化
+cache_manager = None
+embedding_cache = None
+analysis_cache = None
+response_cache = None
+
+def init_cache_managers():
+    """初始化缓存管理器"""
+    global cache_manager, embedding_cache, analysis_cache, response_cache
+    if cache_manager is None:
+        cache_manager = get_global_cache()
+        embedding_cache = EmbeddingCache(cache_manager)
+        analysis_cache = AnalysisCache(cache_manager)
+        response_cache = ResponseCache(cache_manager)
 
 # 记忆系统实例
 memory_system: Optional[MemoryGraph] = None
@@ -279,6 +310,38 @@ async def send_messages_with_typing(bot: Bot, event: MessageEvent, messages: Lis
         if i < len(messages) - 1:
             await asyncio.sleep(random.uniform(0.8, 1.8))
 
+def clean_response_text(text: str) -> str:
+    """清理回复文本，去除括号、描述性内容等不需要的元素"""
+    if not text:
+        return text
+    
+    # 去除各种括号及其内容
+    text = re.sub(r'\([^)]*\)', '', text)  # 去除 (内容)
+    text = re.sub(r'\[[^\]]*\]', '', text)  # 去除 [内容]
+    text = re.sub(r'\{[^}]*\}', '', text)  # 去除 {内容}
+    text = re.sub(r'（[^）]*）', '', text)  # 去除 （内容）
+    text = re.sub(r'【[^】]*】', '', text)  # 去除 【内容】
+    
+    # 去除常见的描述性标记
+    text = re.sub(r'\*[^*]*\*', '', text)  # 去除 *动作*
+    text = re.sub(r'<[^>]*>', '', text)    # 去除 <标记>
+    text = re.sub(r'「[^」]*」', '', text)  # 去除 「内容」
+    text = re.sub(r'『[^』]*』', '', text)  # 去除 『内容』
+    
+    # 去除可能的角色标识或描述性前缀
+    text = re.sub(r'^[^：:]*[：:]', '', text)  # 去除开头的 "角色名:" 格式
+    text = re.sub(r'^\w+\s*:', '', text)       # 去除开头的 "Name:" 格式
+    
+    # 去除多余的空白字符和标点
+    text = re.sub(r'\s+', ' ', text)  # 多个空格变成一个
+    text = text.strip()  # 去除首尾空白
+    
+    # 去除开头和结尾的多余标点
+    text = re.sub(r'^[。，！？\.,!?\s]+', '', text)
+    text = re.sub(r'[。，\.,\s]+$', '', text)
+    
+    return text
+
 async def process_merged_messages(bot: Bot, session_id: str):
     """处理整合后的消息，现在不直接依赖event，更通用"""
     try:
@@ -296,43 +359,68 @@ async def process_merged_messages(bot: Bot, session_id: str):
 
         logger.info(f"处理整合消息 - 会话 {session_id}: {merged_message}")
 
-        group_members = None
+        # 并行处理：同时进行心流判断和其他准备工作
         group_id = None
+        group_members = None
+        
+        # 并行任务列表
+        tasks = []
+        
+        # 任务1：心流判断
+        tasks.append(should_reply_in_group(session_id, last_message_event, merged_message))
+        
+        # 任务2：获取群成员列表（如果是群聊）
         if last_message_event.message_type == 'group' and hasattr(last_message_event, 'group_id'):
             group_id = str(last_message_event.group_id)
-            try:
-                group_id_int = int(last_message_event.group_id)
-                member_list = await bot.get_group_member_list(group_id=group_id_int, no_cache=True)
-                group_members = [{"user_id": str(m["user_id"]), "nickname": m.get("card") or m.get("nickname")} for m in member_list]
-            except Exception as e:
-                logger.error(f"获取群成员列表失败: {e}")
-
+            tasks.append(get_group_members_async(bot, last_message_event.group_id))
+        else:
+            tasks.append(asyncio.sleep(0, result=None))  # 占位任务
+        
+        # 任务3：获取当前人设
         current_persona = persona_manager.get_persona(current_personas.get(session_id)) or persona_manager.get_default_persona()
         if not current_persona:
             await bot.send(last_message_event, "请先设置人设或创建默认人设")
             return
+        tasks.append(asyncio.sleep(0, result=current_persona))  # 占位任务
+        
+        # 等待所有任务完成
+        should_reply, group_members, _ = await asyncio.gather(*tasks)
+        
+        logger.info(f"[DEBUG] 整合消息心流判断结果: {should_reply}")
+        
+        if not should_reply:
+            logger.info(f"[DEBUG] 心流判断决定不回复整合消息，结束处理")
+            return
 
+        # 生成回复（并行处理记忆系统和API调用）
         response = ""
         if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
-            response = await memory_system.generate_contextual_response(
-                user_id=user_id,
-                session_id=session_id,
-                current_message=merged_message,
-                persona_content=current_persona['content'],
-                user_nickname=user_nickname,
-                group_members=group_members
+            # 并行处理：记忆系统生成回复和存储对话
+            response_task = asyncio.create_task(
+                memory_system.generate_contextual_response(
+                    user_id=user_id,
+                    session_id=session_id,
+                    current_message=merged_message,
+                    persona_content=current_persona['content'],
+                    user_nickname=user_nickname,
+                    group_members=group_members
+                )
             )
+            response = await response_task
         else:
             response = await call_deepseek_api(merged_message, current_persona)
         
         if response:
-            # 最终过滤器：在分割前强行移除所有 || 符号和多余标点
-            cleaned_text = re.sub(r'\s*[||]{2}\s*', ' ', response).strip()
-            # 去掉句号、逗号等分隔符号
-            cleaned_text = cleaned_text.replace('。', '').replace('，', '').replace(',', '').replace('.', '')
-            message_parts = split_message_for_sending(cleaned_text)
-            await send_messages_with_typing(bot, last_message_event, message_parts)
-            logger.info(f"已用 {current_persona['name']} 人设回复整合消息 - 会话 {session_id}")
+            # 深度清理回复内容
+            cleaned_response = clean_response_text(response)
+            # 确保清理后还有内容
+            if not cleaned_response or len(cleaned_response.strip()) == 0:
+                logger.warning(f"回复清理后为空，使用简单回复")
+                cleaned_response = "嗯"
+            
+            # 直接发送单条回复，不再分割
+            await bot.send(last_message_event, cleaned_response)
+            logger.info(f"已用 {current_persona['name']} 人设回复整合消息 - 会话 {session_id}: {cleaned_response}")
             
             # 群聊回复后消耗心流精力
             if group_id:
@@ -343,45 +431,73 @@ async def process_merged_messages(bot: Bot, session_id: str):
     finally:
         message_timers.pop(session_id, None)
 
+async def get_group_members_async(bot: Bot, group_id: int) -> Optional[List[Dict[str, str]]]:
+    """异步获取群成员列表"""
+    try:
+        member_list = await bot.get_group_member_list(group_id=group_id, no_cache=True)
+        return [{"user_id": str(m["user_id"]), "nickname": m.get("card") or m.get("nickname")} for m in member_list]
+    except Exception as e:
+        logger.error(f"获取群成员列表失败: {e}")
+        return None
+
 async def schedule_message_processing(bot: Bot, event: MessageEvent, session_id: str):
-    """安排消息处理定时器"""
+    """安排消息处理定时器 - 优化版本"""
     await asyncio.sleep(MESSAGE_MERGE_TIMEOUT)
     
     if session_id in message_timers:
-        await process_merged_messages(bot, session_id) # 修改为直接调用 process_merged_messages
+        await process_merged_messages(bot, session_id)
 
 async def call_deepseek_api(message: str, persona: Dict) -> str:
-    """调用Deepseek API with persona"""
-    url = "https://api.deepseek.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    """调用Deepseek API with persona - 优化版本"""
+    system_prompt = persona['content'] + """
+
+重要回复要求：
+1. 始终只回复一句5-15字的简短话语
+2. 回复必须与用户的消息内容高度相关
+3. 不要编造不存在的信息或数据
+4. 回复要符合角色设定但保持简洁
+5. 除非用户明确要求详细解释，否则保持简短
+6. 不要使用句号，可以使用感叹号、问号等
+7. 回复要自然、贴合对话语境"""
     
-    system_prompt = persona['content'] + "\n\n重要提醒：在回复时请不要使用句号（。），可以使用其他标点符号如问号、感叹号等。"
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt
+        },
+        {
+            "role": "user",
+            "content": message
+        }
+    ]
     
-    data = {
-        "model": "deepseek-chat",
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": message
-            }
-        ],
-        "temperature": 0.8,
-        "max_tokens": 1000
-    }
+    # 初始化缓存管理器（如果需要）
+    init_cache_managers()
     
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=data, headers=headers, timeout=30.0)
-        response.raise_for_status()
+    # 检查缓存
+    cached_response = await response_cache.get_response(messages, "deepseek-reasoner")
+    if cached_response:
+        logger.info(f"使用缓存的DeepSeek响应")
+        return cached_response
+    
+    # 使用API管理器
+    try:
+        deepseek_manager = await get_deepseek_manager(DEEPSEEK_API_KEY)
+        response = await deepseek_manager.generate_response(
+            messages=messages,
+            model="deepseek-reasoner",
+            temperature=0.7,
+            max_tokens=50
+        )
         
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+        # 缓存响应
+        if response:
+            await response_cache.set_response(messages, "deepseek-reasoner", response)
+        
+        return response
+    except Exception as e:
+        logger.error(f"DeepSeek API调用失败: {e}")
+        return "嗯"
 
 def is_command_message(message_text: str) -> bool:
     """判断消息是否为命令消息（不应该被整合）"""
@@ -407,7 +523,7 @@ def is_command_message(message_text: str) -> bool:
     return False
 
 async def should_reply_in_group(session_id: str, event: MessageEvent, text: str) -> bool:
-    """使用心流机制智能判断在群聊中是否应该回复"""
+    """使用心流机制智能判断在群聊中是否应该回复 - 优化版本"""
     # 1. 私聊必定回复
     if event.message_type == "private":
         logger.info(f"[DEBUG] 私聊消息，必定回复")
@@ -437,13 +553,15 @@ async def should_reply_in_group(session_id: str, event: MessageEvent, text: str)
         logger.info(f"[DEBUG] 开始心流判断 - 群 {group_id}, 用户 {user_id}, 人设 {persona_name}")
         
         try:
-            should_reply, decision_info = await heartflow_engine.should_reply(
-                group_id=group_id,
-                user_id=user_id,
-                message=text,
-                nickname=nickname,
-                persona_name=persona_name
-            )
+            # 使用信号量控制并发
+            async with heartflow_semaphore:
+                should_reply, decision_info = await heartflow_engine.should_reply(
+                    group_id=group_id,
+                    user_id=user_id,
+                    message=text,
+                    nickname=nickname,
+                    persona_name=persona_name
+                )
             
             if should_reply:
                 logger.info(f"心流决策：群聊 {group_id} 触发回复 - {decision_info.get('reason', '通过综合分析')}")
@@ -457,37 +575,63 @@ async def should_reply_in_group(session_id: str, event: MessageEvent, text: str)
             logger.error(f"心流机制判断失败: {e}")
             logger.error(f"异常详情: {type(e).__name__}: {str(e)}")
             
+            # 并行回退策略
+            fallback_tasks = []
+            
             # 回退策略1: 基于记忆系统的相关性判断
             if memory_system and memory_config.ENABLE_MEMORY_SYSTEM:
-                try:
-                    current_persona = persona_manager.get_persona(current_personas.get(session_id)) or persona_manager.get_default_persona()
-                    if current_persona:
-                        relevance = await memory_system.calculate_interjection_relevance(
-                            session_id=session_id,
-                            current_message=text,
-                            persona_content=current_persona['content']
-                        )
-                        if relevance > 0.5:
-                            logger.info(f"回退策略1：群聊消息相关度 ({relevance:.2f}) > 0.5，触发插话")
-                            return True
-                except Exception as e2:
-                    logger.error(f"记忆系统回退策略也失败: {e2}")
+                fallback_tasks.append(memory_fallback_check(session_id, text, current_persona))
+            else:
+                fallback_tasks.append(asyncio.sleep(0, result=False))
             
             # 回退策略2: 简单的规则判断
-            logger.info(f"使用简单规则回退策略")
-            if any(keyword in text.lower() for keyword in ["?", "？", "怎么", "为什么", "帮助", "求助"]):
-                logger.info(f"回退策略2：消息包含问题关键词，触发回复")
+            fallback_tasks.append(simple_rule_fallback(text))
+            
+            # 并行执行回退策略
+            memory_result, rule_result = await asyncio.gather(*fallback_tasks)
+            
+            if memory_result:
+                logger.info(f"回退策略1：记忆系统相关度检查通过")
                 return True
             
-            # 回退策略3: 基于消息长度的简单判断
-            if len(text) > 10 and len(text) < 100:
-                # 30%概率回复中等长度的消息
-                import random
-                if random.random() < 0.3:
-                    logger.info(f"回退策略3：随机策略触发回复")
-                    return True
+            if rule_result:
+                logger.info(f"回退策略2：简单规则检查通过")
+                return True
 
     logger.info(f"[DEBUG] 所有判断策略都未触发回复")
+    return False
+
+async def memory_fallback_check(session_id: str, text: str, current_persona: Dict) -> bool:
+    """记忆系统回退检查"""
+    try:
+        if current_persona:
+            relevance = await memory_system.calculate_interjection_relevance(
+                session_id=session_id,
+                current_message=text,
+                persona_content=current_persona['content']
+            )
+            if relevance > 0.5:
+                logger.info(f"回退策略1：群聊消息相关度 ({relevance:.2f}) > 0.5，触发插话")
+                return True
+    except Exception as e:
+        logger.error(f"记忆系统回退策略失败: {e}")
+    return False
+
+async def simple_rule_fallback(text: str) -> bool:
+    """简单规则回退检查"""
+    # 检查问题关键词
+    if any(keyword in text.lower() for keyword in ["?", "？", "怎么", "为什么", "帮助", "求助"]):
+        logger.info(f"回退策略2：消息包含问题关键词，触发回复")
+        return True
+    
+    # 基于消息长度的简单判断
+    if len(text) > 10 and len(text) < 100:
+        # 30%概率回复中等长度的消息
+        import random
+        if random.random() < 0.3:
+            logger.info(f"回退策略3：随机策略触发回复")
+            return True
+    
     return False
 
 # 创建消息处理器 - 调整优先级确保能处理到消息
@@ -532,17 +676,14 @@ async def handle_message(bot: Bot, event: MessageEvent):
         await handle_command_message(bot, event, message_text, session_id)
         return
     
-    # 群聊回复概率判断 - 现在由心流机制处理
-    logger.info(f"[DEBUG] 开始进行回复判断 - 会话 {session_id}")
-    should_reply = await should_reply_in_group(session_id, event, message_text)
-    logger.info(f"[DEBUG] 回复判断结果: {should_reply}")
-    
-    if not should_reply:
-        logger.info(f"[DEBUG] 决定不回复，结束处理")
+    # 对于私聊消息，直接进行整合处理（私聊必定回复）
+    if event.message_type == "private":
+        logger.info(f"[DEBUG] 私聊消息，直接进行整合处理")
+        await handle_regular_message(bot, event, message_text, session_id)
         return
     
-    # 对于普通消息，进行整合处理
-    logger.info(f"[DEBUG] 开始处理普通消息")
+    # 对于群聊消息，也直接进行整合处理，心流判断延后到整合完成后
+    logger.info(f"[DEBUG] 群聊消息，进行整合处理，心流判断将在整合后进行")
     await handle_regular_message(bot, event, message_text, session_id)
 
 async def handle_command_message(bot: Bot, event: MessageEvent, message_text: str, session_id: str):
@@ -708,7 +849,7 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
             return
 
 async def handle_regular_message(bot: Bot, event: MessageEvent, message_text: str, session_id: str):
-    """处理普通消息（需要整合的消息）"""
+    """处理普通消息（需要整合的消息） - 优化版本"""
     if session_id in message_timers:
         message_timers[session_id].cancel()
     
@@ -716,8 +857,17 @@ async def handle_regular_message(bot: Bot, event: MessageEvent, message_text: st
         message_cache[session_id] = []
     message_cache[session_id].append({'text': message_text, 'event': event}) # 存储event
     
-    timer_task = asyncio.create_task(schedule_message_processing(bot, event, session_id))
-    message_timers[session_id] = timer_task
+    # 立即处理单条消息，不再等待整合
+    if len(message_cache[session_id]) == 1:
+        # 对于第一条消息，立即开始处理
+        timer_task = asyncio.create_task(schedule_message_processing(bot, event, session_id))
+        message_timers[session_id] = timer_task
+    else:
+        # 对于后续消息，延长等待时间
+        if session_id in message_timers:
+            message_timers[session_id].cancel()
+        timer_task = asyncio.create_task(schedule_message_processing(bot, event, session_id))
+        message_timers[session_id] = timer_task
     
     logger.info(f"消息已添加到缓存 - 会话 {session_id}: {message_text}")
 
@@ -795,25 +945,7 @@ async def startup_check():
     # 加载群聊黑名单
     reload_group_blacklist()
 
-    # 检查OneBot连接状态
-    try:
-        from nonebot import get_bots
-        bots = get_bots()
-        
-        if bots:
-            logger.info(f"✅ OneBot连接状态: 已连接 {len(bots)} 个机器人")
-            for bot_id, bot in bots.items():
-                logger.info(f"   - Bot ID: {bot_id}, 适配器: {bot.adapter.get_name()}")
-        else:
-            logger.warning("❌ OneBot连接状态: 没有机器人连接")
-            logger.warning("   可能原因:")
-            logger.warning("   1. go-cqhttp或其他OneBot客户端未启动")
-            logger.warning("   2. WebSocket连接配置错误")
-            logger.warning("   3. 连接地址应为: ws://127.0.0.1:8080/onebot/v11/ws")
-            logger.warning("   请检查OneBot客户端配置并重启")
-            
-    except Exception as e:
-        logger.error(f"OneBot连接状态检查失败: {e}")
+    
 
 # 关闭时清理
 @driver.on_shutdown
@@ -827,8 +959,18 @@ async def cleanup():
     message_cache.clear()
     logger.info("已清理所有消息定时器和缓存")
     
+    # 关闭线程池
+    thread_pool.shutdown(wait=True)
+    logger.info("线程池已关闭")
+    
     # 关闭记忆系统
     if memory_system:
         memory_system.close()
         logger.info("记忆系统已关闭")
+    
+    # 清理全局资源
+    await cleanup_global_api_pool()
+    await cleanup_global_cache()
+    
+    logger.info("所有资源清理完成")
 

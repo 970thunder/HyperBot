@@ -13,6 +13,9 @@ from pathlib import Path
 import logging
 import hashlib
 from collections import defaultdict
+from asyncio import Semaphore
+import concurrent.futures
+from functools import lru_cache
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -64,7 +67,7 @@ class MemoryRelation:
     metadata: Dict[str, Any]
 
 class MemoryGraph:
-    """基于Neo4j的图数据库记忆系统"""
+    """基于Neo4j的图数据库记忆系统 - 优化版本"""
 
     def test_connection(self):
         """测试数据库连接"""
@@ -87,6 +90,14 @@ class MemoryGraph:
         self.knowledge_cache = CacheManager(max_size=500, ttl=1800)  # 知识查询缓存30分钟
         self.embedding_cache = CacheManager(max_size=1000, ttl=3600)  # 嵌入缓存1小时
         self.memory_cache = CacheManager(max_size=200, ttl=600)  # 记忆查询缓存10分钟
+        
+        # 并发控制
+        self.api_semaphore = Semaphore(30)  # API调用并发控制
+        self.db_semaphore = Semaphore(20)  # 数据库操作并发控制
+        self.embedding_semaphore = Semaphore(10)  # 嵌入计算并发控制
+        
+        # 线程池用于CPU密集型任务
+        self.thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=15, thread_name_prefix="memory")
         
         # 使用 atexit 确保在程序退出时关闭驱动
         import atexit
@@ -150,13 +161,15 @@ class MemoryGraph:
             if cached_embedding is not None:
                 return cached_embedding
             
-            # 如果缓存中没有，则计算嵌入
-            embedding = await asyncio.to_thread(self.embedding_model.encode, text)
-            embedding_list = embedding.tolist()
-            
-            # 存入缓存
-            self.embedding_cache.set(cache_key, embedding_list)
-            return embedding_list
+            # 使用信号量控制并发
+            async with self.embedding_semaphore:
+                # 如果缓存中没有，则计算嵌入
+                embedding = await asyncio.to_thread(self.embedding_model.encode, text)
+                embedding_list = embedding.tolist()
+                
+                # 存入缓存
+                self.embedding_cache.set(cache_key, embedding_list)
+                return embedding_list
         except Exception as e:
             logger.error(f"生成嵌入失败: {e}")
             return []
@@ -171,7 +184,7 @@ class MemoryGraph:
             return 0.0
 
     async def _make_api_call(self, system_prompt: str, user_prompt: str, temperature: float = 0.5, max_tokens: int = 500) -> str:
-        """通用的API调用函数"""
+        """通用的API调用函数 - 优化版本"""
         url = "https://api.deepseek.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {self.deepseek_api_key}", "Content-Type": "application/json"}
         data = {
@@ -184,13 +197,18 @@ class MemoryGraph:
             "max_tokens": max_tokens
         }
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=data, headers=headers, timeout=45.0)
-                response.raise_for_status()
-                result = response.json()
-                content = result["choices"][0]["message"]["content"]
-                # 清理可能的markdown格式
-                return content.strip().replace("```json", "").replace("```", "").strip()
+            # 使用信号量控制并发和连接池
+            async with self.api_semaphore:
+                async with httpx.AsyncClient(
+                    limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                    timeout=httpx.Timeout(30.0, connect=5.0, read=25.0)
+                ) as client:
+                    response = await client.post(url, json=data, headers=headers)
+                    response.raise_for_status()
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"]
+                    # 清理可能的markdown格式
+                    return content.strip().replace("```json", "").replace("```", "").strip()
         except httpx.ReadTimeout:
             logger.error("API调用超时")
             return ""
@@ -294,7 +312,9 @@ class MemoryGraph:
                                         WITH e MATCH (c:CONVERSATION {id: $cid}) CREATE (c)-[:MENTIONED]->(e)
                                     """, name=entity_name, type=entity_type, cid=conversation_id)
             
-            await asyncio.to_thread(_db_write)
+            # 使用信号量控制数据库并发
+            async with self.db_semaphore:
+                await asyncio.to_thread(_db_write)
             logger.info(f"存储对话记录: {conversation_id}")
             return True
         except Exception as e:
@@ -480,7 +500,7 @@ class MemoryGraph:
             system_prompt += (
                 "\n\n【对话指令】\n"
                 "--- [绝对首要的规则] ---\n"
-                "**回复长度**: 你的核心任务是进行简短、自然的对话。在任何情况下，你的完整回复都不能超过3句话。默认只回复1-2句简短的话。只有当用户明确要求长篇幅（如\"详细解释\"、\"写一段文字\"）时，才能打破此限制。\n"
+                "**回复长度**: 始终只回复一句5-15字的简短话语。回复必须与用户的消息内容高度相关，不要编造不存在的信息或数据。除非用户明确要求详细解释，否则保持简短。\n"
                 "--- [其他重要规则] ---\n"
                 "- **信息优先级**: 如果提供了多种信息来源，请优先使用外部知识和知识库信息。\n"
                 "- **语气**: 像真人一样聊天，语气自然。\n"
@@ -498,7 +518,16 @@ class MemoryGraph:
                 system_prompt += "\n" + combined_context
             
             # 6. 调用API生成最终回复
-            bot_response = await self._make_api_call(system_prompt, current_message, 0.8, 1000)
+            bot_response = await self._make_api_call(system_prompt, current_message, 0.7, 50)
+
+            # 清理生成的回复
+            if bot_response:
+                cleaned_response = clean_response_text(bot_response)
+                # 确保清理后还有内容
+                if not cleaned_response or len(cleaned_response.strip()) == 0:
+                    logger.warning(f"记忆系统回复清理后为空，使用简单回复")
+                    cleaned_response = "嗯"
+                bot_response = cleaned_response
 
             # 7. 异步存储本次对话，不阻塞回复发送
             if bot_response:
@@ -669,6 +698,11 @@ class MemoryGraph:
         if self.driver:
             self.driver.close()
             logger.info("Neo4j连接已关闭")
+        
+        # 关闭线程池
+        if hasattr(self, 'thread_pool'):
+            self.thread_pool.shutdown(wait=True)
+            logger.info("记忆系统线程池已关闭")
 
     # 其他函数如 get_memory_statistics, retrieve_memories_by_entity 等可以保持原样或按需异步化
     async def retrieve_memories_by_entity(self, user_id: str, entity_name: str, 
@@ -946,4 +980,37 @@ class MemoryGraph:
             except Exception as e:
                 logger.error(f"清理记忆失败: {e}")
                 return 0
+
+
+def clean_response_text(text: str) -> str:
+    """清理回复文本，去除括号、描述性内容等不需要的元素"""
+    if not text:
+        return text
+    
+    # 去除各种括号及其内容
+    text = re.sub(r'\([^)]*\)', '', text)  # 去除 (内容)
+    text = re.sub(r'\[[^\]]*\]', '', text)  # 去除 [内容]
+    text = re.sub(r'\{[^}]*\}', '', text)  # 去除 {内容}
+    text = re.sub(r'（[^）]*）', '', text)  # 去除 （内容）
+    text = re.sub(r'【[^】]*】', '', text)  # 去除 【内容】
+    
+    # 去除常见的描述性标记
+    text = re.sub(r'\*[^*]*\*', '', text)  # 去除 *动作*
+    text = re.sub(r'<[^>]*>', '', text)    # 去除 <标记>
+    text = re.sub(r'「[^」]*」', '', text)  # 去除 「内容」
+    text = re.sub(r'『[^』]*』', '', text)  # 去除 『内容』
+    
+    # 去除可能的角色标识或描述性前缀
+    text = re.sub(r'^[^：:]*[：:]', '', text)  # 去除开头的 "角色名:" 格式
+    text = re.sub(r'^\w+\s*:', '', text)       # 去除开头的 "Name:" 格式
+    
+    # 去除多余的空白字符和标点
+    text = re.sub(r'\s+', ' ', text)  # 多个空格变成一个
+    text = text.strip()  # 去除首尾空白
+    
+    # 去除开头和结尾的多余标点
+    text = re.sub(r'^[。，！？\.,!?\s]+', '', text)
+    text = re.sub(r'[。，\.,\s]+$', '', text)
+    
+    return text
 

@@ -42,7 +42,7 @@ class HeartflowConfig:
     context_messages_count: int = 5  # 上下文消息数量
     
     # === AI 分析参数 ===
-    api_timeout: int = 10  # API调用超时时间(秒)
+    api_timeout: int = 60  # API调用超时时间(秒)
     analysis_temperature: float = 0.3  # AI分析温度 (0-1，越高越随机)
     max_analysis_tokens: int = 300  # AI分析最大token数
     
