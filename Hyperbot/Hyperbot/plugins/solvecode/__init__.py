@@ -20,19 +20,24 @@ SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")
 SILICONFLOW_API_URL = "https://api.siliconflow.cn/v1/chat/completions"
 MODEL = "deepseek-ai/DeepSeek-V3.2-Exp"
 
-# 创建消息处理器 - 使用高优先级和block=True拦截代码相关消息
-code_handler = on_message(priority=20, block=True)
+# 创建消息处理器 - 使用最高优先级和block=True拦截代码相关消息
+# priority=100 确保在所有其他插件之前处理
+code_handler = on_message(priority=100, block=True)
 
 
 @code_handler.handle()
 async def handle_code_message(bot: Bot, event: MessageEvent):
-    """处理 /代码 开头的消息"""
+    """处理 /代码 开头的消息 - 高优先级拦截，阻止deepseek处理"""
     user_id = str(event.user_id)
     message_text = event.get_plaintext().strip()
     
     # 检查是否是 /代码 开头的消息
     if not message_text.startswith("/代码"):
+        # 如果不匹配，立即跳过，让其他插件处理
         return
+    
+    # 记录拦截日志
+    logger.info(f"[solvecode] 🚫 拦截代码命令，阻止deepseek处理 - 用户 {user_id}")
     
     # 提取问题描述
     problem = message_text.replace("/代码", "", 1).strip()
@@ -51,10 +56,13 @@ async def handle_code_message(bot: Bot, event: MessageEvent):
             logger.info(f"[solvecode] 已成功回复代码问题 - 用户 {user_id}")
         else:
             await bot.send(event, "抱歉，生成解决方案时出现问题，请稍后再试。")
-            logger.error(f"[solvecode] API调用失败 - 用户 {user_id}")
+            logger.error(f"[solvecode] ❌ API调用失败 - 用户 {user_id}")
     except Exception as e:
-        logger.error(f"[solvecode] 处理代码问题时出错: {e}")
+        logger.error(f"[solvecode] ❌ 处理代码问题时出错: {e}")
         await bot.send(event, "处理代码问题时出现错误，请稍后再试。")
+    
+    # block=True 会自动阻止事件传播到其他插件
+    # 无需手动调用 stop()
 
 
 async def generate_code_solution(problem: str) -> Optional[str]:
