@@ -154,14 +154,15 @@ class HeartflowEngine:
         """添加消息到上下文"""
         state = self.get_group_state(group_id)
         state.total_messages_today += 1
-        
+
         message_data = {
             "user_id": user_id,
             "message": message,
             "nickname": nickname,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "is_bot_reply": False
         }
-        
+
         state.recent_messages.append(message_data)
         # 保持最近N条消息
         if len(state.recent_messages) > self.config.context_messages_count:
@@ -242,43 +243,106 @@ class HeartflowEngine:
                 "reason": "精力不足",
                 "energy_too_low": True
             }
-        
-        # 检查回复间隔
-        if current_time - state.last_reply_time < self.config.min_reply_interval:
-            return {
-                "can_reply": False,
-                "reason": "回复间隔过短",
-                "time_too_soon": True
-            }
-        
+
+        # 检查回复间隔 - 为连贯对话提供更宽松的限制
+        time_since_last_reply = current_time - state.last_reply_time
+
+        # 如果是连贯对话（最近有用户消息），允许更短的回复间隔
+        is_coherent_conversation = False
+        if state.recent_messages:
+            last_user_message_time = max(msg.get('timestamp', 0) for msg in state.recent_messages
+                                       if not msg.get('is_bot_reply', False))
+            time_since_last_user_message = current_time - last_user_message_time
+            # 如果最近30秒内有用户消息，认为是连贯对话
+            is_coherent_conversation = time_since_last_user_message < 30
+
+        # 连贯对话的最小回复间隔为10秒，普通对话为30秒
+        min_interval = 10 if is_coherent_conversation else self.config.min_reply_interval
+
+        # 已移除回复间隔检查 - 跳过此条件
+
         # 检查每小时回复限制
         hour_ago = current_time - 3600
-        recent_replies = sum(1 for msg in state.recent_messages 
+        recent_replies = sum(1 for msg in state.recent_messages
                            if msg.get("is_bot_reply") and msg["timestamp"] > hour_ago)
-        
+
         if recent_replies >= self.config.max_replies_per_hour:
             return {
                 "can_reply": False,
                 "reason": "达到每小时回复上限",
                 "hourly_limit_reached": True
             }
-        
-        return {"can_reply": True, "reason": "通过基础检查"}
+
+        return {"can_reply": True, "reason": "通过基础检查", "is_coherent_conversation": is_coherent_conversation}
+
+    def _analyze_conversation_coherence(self, recent_messages: List[Dict], new_message: str) -> float:
+        """分析对话连贯性，返回0-1的连贯性分数"""
+        if len(recent_messages) < 2:
+            return 0.5  # 没有足够上下文，默认中等连贯性
+
+        coherence_score = 0.5  # 基础分数
+
+        # 检查最后一条消息是否来自同一用户
+        last_message = recent_messages[-1]
+        if len(recent_messages) > 1:
+            second_last = recent_messages[-2]
+
+            # 如果最后两条消息来自同一用户，可能是连续发言
+            if last_message.get('user_id') == second_last.get('user_id'):
+                coherence_score += 0.2
+
+            # 检查时间间隔 - 短时间内连续发言
+            time_diff = last_message.get('timestamp', 0) - second_last.get('timestamp', 0)
+            if time_diff < 60:  # 1分钟内
+                coherence_score += 0.1
+
+        # 检查新消息是否包含对话延续的线索
+        new_message_lower = new_message.lower()
+
+        # 对话延续关键词
+        continuation_keywords = [
+            "然后", "接着", "还有", "另外", "而且", "但是", "不过",
+            "所以", "因此", "于是", "接下来", "继续", "接着说",
+            "嗯", "哦", "啊", "好吧", "好的", "行", "可以"
+        ]
+
+        # 问题关键词
+        question_keywords = ["？", "?", "什么", "怎么", "为什么", "如何", "哪里", "谁", "什么时候"]
+
+        # 提及机器人关键词
+        bot_mention_keywords = ["机器人", "bot", "@", "你", "帮忙", "帮助"]
+
+        # 分析新消息特征
+        if any(keyword in new_message_lower for keyword in continuation_keywords):
+            coherence_score += 0.2
+
+        if any(keyword in new_message_lower for keyword in question_keywords):
+            coherence_score += 0.3
+
+        if any(keyword in new_message_lower for keyword in bot_mention_keywords):
+            coherence_score += 0.4
+
+        # 限制在0-1范围内
+        return max(0.0, min(1.0, coherence_score))
     
     async def _analyze_message_with_ai_optimized(self, state: GroupState, message: str, persona_name: str) -> Dict:
-        """使用AI分析消息"""
-        
-        # 构建上下文
+        """使用AI分析消息 - 优化上下文连贯性"""
+
+        # 构建上下文 - 使用更多消息和对话连贯性分析
         context_messages = []
-        for msg in state.recent_messages[-3:]:  # 最近3条消息作为上下文
-            context_messages.append(f"{msg.get('nickname', msg['user_id'])}: {msg['message']}")
-        
+        for msg in state.recent_messages[-5:]:  # 增加到最近5条消息作为上下文
+            sender = msg.get('nickname', msg['user_id'])
+            context_messages.append(f"{sender}: {msg['message']}")
+
         context_str = "\n".join(context_messages) if context_messages else "无上下文"
+
+        # 分析对话连贯性
+        conversation_coherence = self._analyze_conversation_coherence(state.recent_messages, message)
         
-        # 构建prompt - 优化为更稳定的JSON输出
+        # 构建prompt - 优化为更稳定的JSON输出，增强上下文连贯性判断
         analysis_prompt = f"""你是一个聊天群的智能回复决策助手。请分析以下消息是否值得机器人回复。
 
-当前群聊上下文：
+当前群聊上下文（最近对话）：
 {context_str}
 
 新消息: {message}
@@ -286,11 +350,16 @@ class HeartflowEngine:
 当前精力值: {state.energy:.2f}/1.0
 今日已回复: {state.bot_replies_today}次
 
+**特别注意对话连贯性**：
+- 如果新消息明显是对话的延续，请提高回复意愿
+- 如果消息直接提及机器人或包含问题，请提高内容相关度
+- 如果对话正在进行中，请考虑社交适宜性
+
 请从以下4个维度评分(0-10分)，并给出简短理由：
-1. 内容相关度：消息是否有价值、有趣、适合回复
-2. 回复意愿：基于当前精力状态的回复意愿
-3. 社交适宜性：回复是否符合群聊氛围
-4. 时机恰当性：考虑频率控制和时间间隔
+1. 内容相关度：消息是否有价值、有趣、适合回复，是否与上下文连贯
+2. 回复意愿：基于当前精力状态和对话连贯性的回复意愿
+3. 社交适宜性：回复是否符合群聊氛围和当前对话节奏
+4. 时机恰当性：考虑频率控制、时间间隔和对话时机
 
 **重要**: 请直接返回JSON格式，不要使用markdown包装：
 {{
@@ -299,7 +368,8 @@ class HeartflowEngine:
   "social_appropriateness": 整数(0-10),
   "timing_appropriateness": 整数(0-10),
   "reasoning": "简短的分析理由",
-  "key_factors": ["关键因素1", "关键因素2"]
+  "key_factors": ["关键因素1", "关键因素2"],
+  "conversation_coherence": {conversation_coherence}
 }}"""
 
         try:
@@ -324,8 +394,8 @@ class HeartflowEngine:
             # 使用信号量控制并发和连接池
             async with self.api_semaphore:
                 async with httpx.AsyncClient(
-                    limits=httpx.Limits(max_keepalive_connections=10, max_connections=50),
-                    timeout=httpx.Timeout(self.config.api_timeout, connect=10.0, read=50.0)
+                    limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                    timeout=httpx.Timeout(self.config.api_timeout, connect=5.0, read=20.0)
                 ) as client:
                     response = await client.post(
                         url, 
@@ -448,25 +518,32 @@ class HeartflowEngine:
         }
     
     def _make_final_decision(self, state: GroupState, analysis: Dict) -> Dict:
-        """做出最终决策"""
+        """做出最终决策 - 优化考虑对话连贯性"""
         # 使用配置中的权重
         weights = self.config.get_weights()
-        
+
         final_score = 0
         for dimension, weight in weights.items():
             score = analysis.get(dimension, 5)
             final_score += (score / 10) * weight
-        
+
         # 精力状态影响
         energy_multiplier = 0.5 + (state.energy * 0.5)  # 0.5-1.0
         final_score *= energy_multiplier
-        
+
+        # 对话连贯性加成
+        conversation_coherence = analysis.get('conversation_coherence', 0.5)
+        coherence_bonus = conversation_coherence * 0.2  # 最高20%加成
+        final_score *= (1.0 + coherence_bonus)
+
         should_reply = final_score > self.config.reply_threshold
-        
+
         return {
             "should_reply": should_reply,
             "final_score": final_score,
             "energy_multiplier": energy_multiplier,
+            "conversation_coherence": conversation_coherence,
+            "coherence_bonus": coherence_bonus,
             "threshold_met": final_score > self.config.reply_threshold
         }
     

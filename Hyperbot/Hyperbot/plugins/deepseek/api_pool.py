@@ -65,10 +65,10 @@ class APIPool:
                 max_connections=self.max_connections
             )
             timeout = httpx.Timeout(
-                connect=5.0,
-                read=30.0,
-                write=10.0,
-                pool=60.0
+                connect=3.0,    # 连接超时从5秒减少到3秒
+                read=15.0,     # 读取超时从30秒减少到15秒
+                write=5.0,     # 写入超时从10秒减少到5秒
+                pool=30.0      # 连接池超时从60秒减少到30秒
             )
             self.client_pool = httpx.AsyncClient(
                 limits=limits,
@@ -232,10 +232,10 @@ class DeepSeekAPIManager:
         self.api_pool = api_pool or APIPool(max_concurrent=50, max_connections=100)
         self.base_url = "https://api.deepseek.com/v1/chat/completions"
         
-    async def generate_response(self, messages: List[Dict[str, str]], 
+    async def generate_response(self, messages: List[Dict[str, str]],
                               model: str = "deepseek-reasoner",
                               temperature: float = 0.7,
-                              max_tokens: int = 50) -> str:
+                              max_tokens: int = 1500) -> str:
         """生成回复"""
         api_call = APICall(
             url=self.base_url,
@@ -262,7 +262,7 @@ class DeepSeekAPIManager:
     async def batch_generate_responses(self, message_batches: List[List[Dict[str, str]]],
                                      model: str = "deepseek-reasoner",
                                      temperature: float = 0.7,
-                                     max_tokens: int = 50) -> List[str]:
+                                     max_tokens: int = 1500) -> List[str]:
         """批量生成回复"""
         api_calls = []
         for messages in message_batches:

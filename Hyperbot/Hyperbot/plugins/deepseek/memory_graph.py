@@ -500,7 +500,7 @@ class MemoryGraph:
             system_prompt += (
                 "\n\n【对话指令】\n"
                 "--- [绝对首要的规则] ---\n"
-                "**回复长度**: 始终只回复一句5-15字的简短话语。回复必须与用户的消息内容高度相关，不要编造不存在的信息或数据。除非用户明确要求详细解释，否则保持简短。\n"
+                "**回复长度**: 日常对话回复1-2句简短话语（5-15字）。当用户明确要求详细解释、代码、长回答时，可以完整回复3-6句或更多内容。对于编程问题、技术解答、代码示例等需要完整回答的内容，请提供完整详细的回复。\n"
                 "--- [其他重要规则] ---\n"
                 "- **信息优先级**: 如果提供了多种信息来源，请优先使用外部知识和知识库信息。\n"
                 "- **语气**: 像真人一样聊天，语气自然。\n"
@@ -518,7 +518,7 @@ class MemoryGraph:
                 system_prompt += "\n" + combined_context
             
             # 6. 调用API生成最终回复
-            bot_response = await self._make_api_call(system_prompt, current_message, 0.7, 50)
+            bot_response = await self._make_api_call(system_prompt, current_message, 0.7, 500)
 
             # 清理生成的回复
             if bot_response:

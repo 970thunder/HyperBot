@@ -21,6 +21,7 @@ from ..Heartflow import heartflow_engine
 # 导入优化组件
 from .api_pool import get_deepseek_manager, get_siliconflow_manager, cleanup_global_api_pool
 from .cache_manager import get_global_cache, EmbeddingCache, AnalysisCache, ResponseCache, cleanup_global_cache
+from .group_context_manager import global_group_context_manager
 
 __plugin_meta__ = PluginMetadata(
     name="增强版Deepseek人设聊天",
@@ -314,33 +315,71 @@ def clean_response_text(text: str) -> str:
     """清理回复文本，去除括号、描述性内容等不需要的元素"""
     if not text:
         return text
-    
+
+    original_text = text
+
+    # 检查是否包含代码块或编程相关内容
+    has_code = any(keyword in text.lower() for keyword in
+                   ['#include', 'int main', 'printf', 'scanf', 'return',
+                    'function', 'def ', 'class ', 'import ', 'print(',
+                    '代码', '编程', '算法', '函数', '变量'])
+
+    # 如果包含代码内容，减少清理强度
+    if has_code:
+        logger.info(f"[DEBUG] 检测到代码内容，减少清理强度")
+        # 只清理最明显的角色标识，保留代码结构
+        text = re.sub(r'^[^：:]*[：:]', '', text)  # 去除开头的 "角色名:" 格式
+        text = re.sub(r'^\w+\s*:', '', text)       # 去除开头的 "Name:" 格式
+
+        # 去除多余的空白字符
+        text = re.sub(r'\s+', ' ', text)  # 多个空格变成一个
+        text = text.strip()  # 去除首尾空白
+
+        logger.info(f"[DEBUG] 代码清理后长度: {len(text)}")
+        return text
+
+    # 对于普通对话，进行完整清理
+    logger.info(f"[DEBUG] 普通对话内容，进行完整清理")
     # 去除各种括号及其内容
     text = re.sub(r'\([^)]*\)', '', text)  # 去除 (内容)
     text = re.sub(r'\[[^\]]*\]', '', text)  # 去除 [内容]
     text = re.sub(r'\{[^}]*\}', '', text)  # 去除 {内容}
     text = re.sub(r'（[^）]*）', '', text)  # 去除 （内容）
     text = re.sub(r'【[^】]*】', '', text)  # 去除 【内容】
-    
+
     # 去除常见的描述性标记
     text = re.sub(r'\*[^*]*\*', '', text)  # 去除 *动作*
     text = re.sub(r'<[^>]*>', '', text)    # 去除 <标记>
     text = re.sub(r'「[^」]*」', '', text)  # 去除 「内容」
     text = re.sub(r'『[^』]*』', '', text)  # 去除 『内容』
-    
+
     # 去除可能的角色标识或描述性前缀
     text = re.sub(r'^[^：:]*[：:]', '', text)  # 去除开头的 "角色名:" 格式
     text = re.sub(r'^\w+\s*:', '', text)       # 去除开头的 "Name:" 格式
-    
+
     # 去除多余的空白字符和标点
     text = re.sub(r'\s+', ' ', text)  # 多个空格变成一个
     text = text.strip()  # 去除首尾空白
-    
+
     # 去除开头和结尾的多余标点
     text = re.sub(r'^[。，！？\.,!?\s]+', '', text)
     text = re.sub(r'[。，\.,\s]+$', '', text)
-    
+
+    logger.info(f"[DEBUG] 普通清理后长度: {len(text)} (原始长度: {len(original_text)})")
     return text
+
+async def store_bot_reply_in_context(event: MessageEvent, reply_text: str, persona_name: str = ""):
+    """将机器人回复存储到群聊上下文"""
+    if event.message_type == "group" and hasattr(event, 'group_id'):
+        group_id = str(event.group_id)
+        global_group_context_manager.add_message(
+            group_id=group_id,
+            user_id="bot",  # 机器人用户ID
+            message=reply_text,
+            nickname=persona_name or "机器人",  # 使用人设名称作为昵称
+            is_bot_reply=True
+        )
+        logger.debug(f"机器人回复已添加到群 {group_id} 上下文: {reply_text}")
 
 async def process_merged_messages(bot: Bot, session_id: str):
     """处理整合后的消息，现在不直接依赖event，更通用"""
@@ -365,24 +404,35 @@ async def process_merged_messages(bot: Bot, session_id: str):
         
         # 并行任务列表
         tasks = []
-        
+
         # 任务1：心流判断
         tasks.append(should_reply_in_group(session_id, last_message_event, merged_message))
-        
+
         # 任务2：获取群成员列表（如果是群聊）
         if last_message_event.message_type == 'group' and hasattr(last_message_event, 'group_id'):
             group_id = str(last_message_event.group_id)
             tasks.append(get_group_members_async(bot, last_message_event.group_id))
         else:
             tasks.append(asyncio.sleep(0, result=None))  # 占位任务
-        
+
         # 任务3：获取当前人设
         current_persona = persona_manager.get_persona(current_personas.get(session_id)) or persona_manager.get_default_persona()
         if not current_persona:
             await bot.send(last_message_event, "请先设置人设或创建默认人设")
             return
         tasks.append(asyncio.sleep(0, result=current_persona))  # 占位任务
-        
+
+        # 任务4：添加消息到群聊上下文（如果是群聊）
+        if last_message_event.message_type == 'group' and hasattr(last_message_event, 'group_id'):
+            group_id = str(last_message_event.group_id)
+            global_group_context_manager.add_message(
+                group_id=group_id,
+                user_id=user_id,
+                message=merged_message,
+                nickname=user_nickname,
+                is_bot_reply=False
+            )
+
         # 等待所有任务完成
         should_reply, group_members, _ = await asyncio.gather(*tasks)
         
@@ -408,23 +458,44 @@ async def process_merged_messages(bot: Bot, session_id: str):
             )
             response = await response_task
         else:
-            response = await call_deepseek_api(merged_message, current_persona)
+            # 使用群聊上下文增强API调用
+            group_context = ""
+            if last_message_event.message_type == 'group' and hasattr(last_message_event, 'group_id'):
+                group_id = str(last_message_event.group_id)
+                group_context = global_group_context_manager.get_context_for_prompt(group_id)
+
+            response = await call_deepseek_api_with_context(merged_message, current_persona, group_context)
         
         if response:
             # 深度清理回复内容
+            logger.info(f"[DEBUG] 清理前响应长度: {len(response)}")
+            logger.info(f"[DEBUG] 清理前响应内容: {response}")
             cleaned_response = clean_response_text(response)
+            logger.info(f"[DEBUG] 清理后响应长度: {len(cleaned_response)}")
+            logger.info(f"[DEBUG] 清理后响应内容: {cleaned_response}")
+
             # 确保清理后还有内容
             if not cleaned_response or len(cleaned_response.strip()) == 0:
                 logger.warning(f"回复清理后为空，使用简单回复")
                 cleaned_response = "嗯"
-            
+
             # 直接发送单条回复，不再分割
             await bot.send(last_message_event, cleaned_response)
             logger.info(f"已用 {current_persona['name']} 人设回复整合消息 - 会话 {session_id}: {cleaned_response}")
-            
+
             # 群聊回复后消耗心流精力
             if group_id:
                 heartflow_engine.consume_energy(group_id)
+
+            # 将机器人回复添加到群聊上下文
+            if group_id:
+                global_group_context_manager.add_message(
+                    group_id=group_id,
+                    user_id="bot",  # 机器人用户ID
+                    message=cleaned_response,
+                    nickname=current_persona['name'],  # 使用人设名称作为昵称
+                    is_bot_reply=True
+                )
         
     except Exception as e:
         logger.error(f"处理整合消息时出错: {e}")
@@ -452,14 +523,18 @@ async def call_deepseek_api(message: str, persona: Dict) -> str:
     system_prompt = persona['content'] + """
 
 重要回复要求：
-1. 始终只回复一句5-15字的简短话语
-2. 回复必须与用户的消息内容高度相关
-3. 不要编造不存在的信息或数据
-4. 回复要符合角色设定但保持简洁
-5. 除非用户明确要求详细解释，否则保持简短
+1. 日常对话回复1-2句简短话语（5-15字）
+2. 当用户明确要求详细解释、代码、长回答时，可以完整回复3-6句或更多内容
+3. 回复必须与用户的消息内容高度相关
+4. 不要编造不存在的信息或数据
+5. 回复要符合角色设定
 6. 不要使用句号，可以使用感叹号、问号等
-7. 回复要自然、贴合对话语境"""
-    
+7. 回复要自然、贴合对话语境
+8. 对于编程问题、技术解答、代码示例等需要完整回答的内容，请提供完整详细的回复
+9. 如果用户询问编程问题、算法、代码实现等，请提供完整的代码和详细解释，不要截断回复
+10. 当用户提供编程题目时，请给出完整的可运行代码、详细解释和测试用例，确保代码完整无缺
+11. 如果用户只提供了部分代码（如"#include #include int main"），请补全完整的程序并解释每个部分的作用"""
+
     messages = [
         {
             "role": "system",
@@ -470,16 +545,16 @@ async def call_deepseek_api(message: str, persona: Dict) -> str:
             "content": message
         }
     ]
-    
+
     # 初始化缓存管理器（如果需要）
     init_cache_managers()
-    
+
     # 检查缓存
     cached_response = await response_cache.get_response(messages, "deepseek-reasoner")
     if cached_response:
         logger.info(f"使用缓存的DeepSeek响应")
         return cached_response
-    
+
     # 使用API管理器
     try:
         deepseek_manager = await get_deepseek_manager(DEEPSEEK_API_KEY)
@@ -487,13 +562,85 @@ async def call_deepseek_api(message: str, persona: Dict) -> str:
             messages=messages,
             model="deepseek-reasoner",
             temperature=0.7,
-            max_tokens=50
+            max_tokens=1500
         )
-        
+
+        # 记录原始API响应用于调试
+        logger.info(f"[DEBUG] 原始API响应长度: {len(response) if response else 0}")
+        logger.info(f"[DEBUG] 原始API响应内容: {response}")
+
         # 缓存响应
         if response:
             await response_cache.set_response(messages, "deepseek-reasoner", response)
-        
+
+        return response
+    except Exception as e:
+        logger.error(f"DeepSeek API调用失败: {e}")
+        return "嗯"
+
+async def call_deepseek_api_with_context(message: str, persona: Dict, context: str = "") -> str:
+    """调用Deepseek API with persona and context - 优化版本"""
+    system_prompt = persona['content']
+
+    # 添加上下文信息
+    if context:
+        system_prompt += f"\n\n【群聊上下文】\n{context}\n"
+
+    system_prompt += """
+
+重要回复要求：
+1. 日常对话回复1-2句简短话语（5-15字）
+2. 当用户明确要求详细解释、代码、长回答时，可以完整回复3-6句或更多内容
+3. 回复必须与用户的消息内容高度相关
+4. 不要编造不存在的信息或数据
+5. 回复要符合角色设定
+6. 不要使用句号，可以使用感叹号、问号等
+7. 回复要自然、贴合对话语境
+8. 如果提供了群聊上下文，请参考上下文内容进行连贯回复
+9. 对于编程问题、技术解答、代码示例等需要完整回答的内容，请提供完整详细的回复
+10. 如果用户询问编程问题、算法、代码实现等，请提供完整的代码和详细解释，不要截断回复
+11. 当用户提供编程题目时，请给出完整的可运行代码、详细解释和测试用例，确保代码完整无缺
+12. 如果用户只提供了部分代码（如"#include #include int main"），请补全完整的程序并解释每个部分的作用"""
+
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt
+        },
+        {
+            "role": "user",
+            "content": message
+        }
+    ]
+
+    # 初始化缓存管理器（如果需要）
+    init_cache_managers()
+
+    # 检查缓存
+    cache_key = f"context_{hash(context)}_{hash(message)}"
+    cached_response = await response_cache.get_response(messages, f"deepseek-reasoner-{cache_key}")
+    if cached_response:
+        logger.info(f"使用缓存的带上下文DeepSeek响应")
+        return cached_response
+
+    # 使用API管理器
+    try:
+        deepseek_manager = await get_deepseek_manager(DEEPSEEK_API_KEY)
+        response = await deepseek_manager.generate_response(
+            messages=messages,
+            model="deepseek-reasoner",
+            temperature=0.7,
+            max_tokens=1500
+        )
+
+        # 记录原始API响应用于调试
+        logger.info(f"[DEBUG] 带上下文原始API响应长度: {len(response) if response else 0}")
+        logger.info(f"[DEBUG] 带上下文原始API响应内容: {response}")
+
+        # 缓存响应
+        if response:
+            await response_cache.set_response(messages, f"deepseek-reasoner-{cache_key}", response)
+
         return response
     except Exception as e:
         logger.error(f"DeepSeek API调用失败: {e}")
@@ -689,12 +836,15 @@ async def handle_message(bot: Bot, event: MessageEvent):
 async def handle_command_message(bot: Bot, event: MessageEvent, message_text: str, session_id: str):
     """处理命令消息"""
     user_id = str(event.user_id)
-    
+
     # 检查是否是人设切换命令
     persona = persona_manager.get_persona_by_keyword(message_text)
     if persona:
         current_personas[session_id] = persona['name']
-        await bot.send(event, f"已切换到 {persona['name']} 人设~")
+        reply_text = f"已切换到 {persona['name']} 人设~"
+        await bot.send(event, reply_text)
+        # 将命令回复存储到群聊上下文
+        await store_bot_reply_in_context(event, reply_text, persona['name'])
         logger.info(f"会话 {session_id} 切换到人设: {persona['name']}")
         return
     
@@ -708,15 +858,24 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
                 reply += f"• {persona['name']}\n"
                 reply += f"  描述: {persona['description']}\n"
                 reply += f"  触发词: {keywords_str}\n\n"
-            await bot.send(event, reply.strip())
+            reply_text = reply.strip()
+            await bot.send(event, reply_text)
+            # 将命令回复存储到群聊上下文
+            await store_bot_reply_in_context(event, reply_text, "系统")
         else:
-            await bot.send(event, "暂无可用人设")
+            reply_text = "暂无可用人设"
+            await bot.send(event, reply_text)
+            # 将命令回复存储到群聊上下文
+            await store_bot_reply_in_context(event, reply_text, "系统")
         return
     
     # 检查是否是重新加载人设命令
     if message_text in ['重新加载人设', '刷新人设', '重载人设']:
         persona_manager.reload_personas()
-        await bot.send(event, f"人设已重新加载！当前有 {len(persona_manager.personas)} 个人设")
+        reply_text = f"人设已重新加载！当前有 {len(persona_manager.personas)} 个人设"
+        await bot.send(event, reply_text)
+        # 将命令回复存储到群聊上下文
+        await store_bot_reply_in_context(event, reply_text, "系统")
         return
     
     # 心流机制相关命令
@@ -733,13 +892,25 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
                     reply += f"📈 回复率: {stats['reply_rate']*100:.1f}%\n"
                     reply += f"⏰ 上次回复: {stats['last_reply_ago']} 分钟前\n"
                     reply += f"📝 消息缓存: {stats['recent_messages_count']} 条"
-                    await bot.send(event, reply)
+                    reply_text = reply
+                    await bot.send(event, reply_text)
+                    # 将命令回复存储到群聊上下文
+                    await store_bot_reply_in_context(event, reply_text, "系统")
                 else:
-                    await bot.send(event, f"获取心流状态失败: {stats['error']}")
+                    reply_text = f"获取心流状态失败: {stats['error']}"
+                    await bot.send(event, reply_text)
+                    # 将命令回复存储到群聊上下文
+                    await store_bot_reply_in_context(event, reply_text, "系统")
             except Exception as e:
-                await bot.send(event, f"获取心流状态失败: {e}")
+                reply_text = f"获取心流状态失败: {e}"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
         else:
-            await bot.send(event, "心流状态查询仅支持群聊")
+            reply_text = "心流状态查询仅支持群聊"
+            await bot.send(event, reply_text)
+            # 将命令回复存储到群聊上下文
+            await store_bot_reply_in_context(event, reply_text, "系统")
         return
     
     # 群聊黑名单管理命令
@@ -748,9 +919,15 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
             reply = f"📋 当前黑名单群聊 ({len(group_blacklist)} 个):\n\n"
             for group_id in sorted(group_blacklist):
                 reply += f"• {group_id}\n"
-            await bot.send(event, reply)
+            reply_text = reply
+            await bot.send(event, reply_text)
+            # 将命令回复存储到群聊上下文
+            await store_bot_reply_in_context(event, reply_text, "系统")
         else:
-            await bot.send(event, "当前黑名单为空")
+            reply_text = "当前黑名单为空"
+            await bot.send(event, reply_text)
+            # 将命令回复存储到群聊上下文
+            await store_bot_reply_in_context(event, reply_text, "系统")
         return
     
     if message_text.startswith('添加黑名单 '):
@@ -760,12 +937,21 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
                 group_blacklist.add(group_id_to_add)
                 # 保存到文件
                 save_group_blacklist()
-                await bot.send(event, f"已将群 {group_id_to_add} 添加到黑名单")
+                reply_text = f"已将群 {group_id_to_add} 添加到黑名单"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
                 logger.info(f"用户 {user_id} 将群 {group_id_to_add} 添加到黑名单")
             except Exception as e:
-                await bot.send(event, f"添加黑名单失败: {e}")
+                reply_text = f"添加黑名单失败: {e}"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
         else:
-            await bot.send(event, "请提供要添加的群号")
+            reply_text = "请提供要添加的群号"
+            await bot.send(event, reply_text)
+            # 将命令回复存储到群聊上下文
+            await store_bot_reply_in_context(event, reply_text, "系统")
         return
     
     if message_text.startswith('移除黑名单 '):
@@ -775,17 +961,29 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
                 group_blacklist.remove(group_id_to_remove)
                 # 保存到文件
                 save_group_blacklist()
-                await bot.send(event, f"已将群 {group_id_to_remove} 从黑名单移除")
+                reply_text = f"已将群 {group_id_to_remove} 从黑名单移除"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
                 logger.info(f"用户 {user_id} 将群 {group_id_to_remove} 从黑名单移除")
             else:
-                await bot.send(event, f"群 {group_id_to_remove} 不在黑名单中")
+                reply_text = f"群 {group_id_to_remove} 不在黑名单中"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
         else:
-            await bot.send(event, "请提供要移除的群号")
+            reply_text = "请提供要移除的群号"
+            await bot.send(event, reply_text)
+            # 将命令回复存储到群聊上下文
+            await store_bot_reply_in_context(event, reply_text, "系统")
         return
     
     if message_text in ['重新加载黑名单', '刷新黑名单', '重载黑名单']:
         reload_group_blacklist()
-        await bot.send(event, f"黑名单已重新加载！当前有 {len(group_blacklist)} 个群在黑名单中")
+        reply_text = f"黑名单已重新加载！当前有 {len(group_blacklist)} 个群在黑名单中"
+        await bot.send(event, reply_text)
+        # 将命令回复存储到群聊上下文
+        await store_bot_reply_in_context(event, reply_text, "系统")
         return
     
     # 记忆系统相关命令
@@ -799,20 +997,29 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
                     reply += f"使用人设数: {stats.get('personas_used', 0)}\n"
                     reply += f"讨论话题数: {stats.get('topics_discussed', 0)}\n"
                     reply += f"提及实体数: {stats.get('entities_mentioned', 0)}\n"
-                    
+
                     first_conv = stats.get('first_conversation')
                     last_conv = stats.get('last_conversation')
                     if first_conv:
                         reply += f"首次对话: {first_conv}\n"
                     if last_conv:
                         reply += f"最近对话: {last_conv}\n"
-                    
-                    await bot.send(event, reply)
+
+                    reply_text = reply
+                    await bot.send(event, reply_text)
+                    # 将命令回复存储到群聊上下文
+                    await store_bot_reply_in_context(event, reply_text, "系统")
                 else:
-                    await bot.send(event, "暂无记忆数据")
+                    reply_text = "暂无记忆数据"
+                    await bot.send(event, reply_text)
+                    # 将命令回复存储到群聊上下文
+                    await store_bot_reply_in_context(event, reply_text, "系统")
             except Exception as e:
                 logger.error(f"获取记忆统计失败: {e}")
-                await bot.send(event, "获取记忆统计失败")
+                reply_text = "获取记忆统计失败"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
             return
         
         if message_text in ['记忆健康', '系统健康']:
@@ -820,32 +1027,47 @@ async def handle_command_message(bot: Bot, event: MessageEvent, message_text: st
                 health_report = memory_system.get_memory_health_report()
                 if 'error' not in health_report:
                     reply = "🏥 记忆系统健康报告：\n\n"
-                    
+
                     node_counts = health_report.get('node_counts', {})
                     reply += "节点统计:\n"
                     for node_type, count in node_counts.items():
                         reply += f"  {node_type}: {count}\n"
-                    
+
                     recommendations = health_report.get('recommendations', [])
                     reply += f"\n建议:\n"
                     for rec in recommendations:
                         reply += f"  • {rec}\n"
-                    
-                    await bot.send(event, reply)
+
+                    reply_text = reply
+                    await bot.send(event, reply_text)
+                    # 将命令回复存储到群聊上下文
+                    await store_bot_reply_in_context(event, reply_text, "系统")
                 else:
-                    await bot.send(event, f"获取健康报告失败: {health_report['error']}")
+                    reply_text = f"获取健康报告失败: {health_report['error']}"
+                    await bot.send(event, reply_text)
+                    # 将命令回复存储到群聊上下文
+                    await store_bot_reply_in_context(event, reply_text, "系统")
             except Exception as e:
                 logger.error(f"获取健康报告失败: {e}")
-                await bot.send(event, "获取健康报告失败")
+                reply_text = "获取健康报告失败"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
             return
         
         if message_text in ['清理记忆']:
             try:
                 deleted_count = memory_system.cleanup_old_memories()
-                await bot.send(event, f"已清理 {deleted_count} 条旧记忆")
+                reply_text = f"已清理 {deleted_count} 条旧记忆"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
             except Exception as e:
                 logger.error(f"清理记忆失败: {e}")
-                await bot.send(event, "清理记忆失败")
+                reply_text = "清理记忆失败"
+                await bot.send(event, reply_text)
+                # 将命令回复存储到群聊上下文
+                await store_bot_reply_in_context(event, reply_text, "系统")
             return
 
 async def handle_regular_message(bot: Bot, event: MessageEvent, message_text: str, session_id: str):
