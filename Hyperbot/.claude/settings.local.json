@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nb run)",
+      "Bash(python bot.py)",
+      "Bash(conda activate bot)",
+      "Read(//e/Anaconda/envs/bot/**)",
+      "Bash(\"E:\\Anaconda\\envs\\bot\\python.exe\" bot.py)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

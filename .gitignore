@@ -1,0 +1,9 @@
+# Ignore the LLOneBot directory
+@LLOneBot-win-x64-ffmpeg/ 
+./LLOneBot-win-x64-ffmpeg/
+LLOneBot-win-x64-ffmpeg/data/
+LLOneBot-win-x64-ffmpeg/data/
+
+.idea/
+.vscode/
+

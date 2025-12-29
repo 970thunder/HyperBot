@@ -1,0 +1,27 @@
+# 基础依赖
+nonebot2
+nonebot-adapter-onebot
+httpx
+asyncio
+
+# 图数据库相关
+neo4j
+sentence-transformers
+numpy
+
+# 数据处理
+pandas
+json5
+
+# 日志和配置
+python-dotenv
+pydantic
+
+# 可选：如果需要本地嵌入模型
+torch
+transformers
+
+# 开发和测试
+# pytest
+# pytest-asyncio
+

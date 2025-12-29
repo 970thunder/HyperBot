@@ -1,0 +1,44 @@
+{
+  "可爱少女": {
+    "file": "cute_girl.txt",
+    "keywords": "可爱少女",
+    "is_default": false,
+    "description": "活泼可爱的少女"
+  },
+  "酷帅男友": {
+    "file": "cool_guy.txt",
+    "keywords": "酷帅",
+    "is_default": false,
+    "description": "酷酷的男生"
+  },
+  "智慧长者": {
+    "file": "wise_elder.txt",
+    "keywords": "哲学长者",
+    "is_default": false,
+    "description": "充满智慧的长者"
+  },
+  "搞笑朋友": {
+    "file": "funny_friend.txt",
+    "keywords": "搞笑幽默",
+    "is_default": false,
+    "description": "幽默风趣的朋友"
+  },
+  "猫娘": {
+    "file": "cat_girl.txt",
+    "keywords": "猫娘",
+    "is_default": false,
+    "description": "可爱的猫娘"
+  },
+  "逆天DS": {
+    "file": "ds.txt",
+    "keywords": "逆天DS",
+    "is_default": false,
+    "description": "贴吧老哥的攻击力"
+  },
+  "希儿": {
+    "file": "default.txt",
+    "keywords": "默认",
+    "is_default": true,
+    "description": "希儿·芙乐艾"
+  }
+}
